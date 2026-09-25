@@ -74,7 +74,7 @@ jobs:
 
       - name: Publish the archive and list the release
         env:
-          HF_TOKEN: ${{ secrets.HF_FUNES_INTEGRATIONS_TOKEN }}
+          HF_TOKEN: ${{ secrets.HF_FUNES_INTEGRATIONS_RELEASE_TOKEN }}
           ID: ${{ steps.release.outputs.id }}
           VERSION: ${{ steps.release.outputs.version }}
           CONTRACT: ${{ steps.release.outputs.contract }}

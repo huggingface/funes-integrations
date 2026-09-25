@@ -40,7 +40,7 @@ bucket's `catalog.json`. Versions are the integration's own — `version` in its
    with the id and version.
 
 The workflow checks the manifest against the tag, runs the bundle's tests, packs and publishes the
-archive, and adds the release to the catalog. It needs `HF_FUNES_INTEGRATIONS_TOKEN`: a token
+archive, and adds the release to the catalog. It needs `HF_FUNES_INTEGRATIONS_RELEASE_TOKEN`: a token
 that can write that bucket, and nothing else. Releases run one at a time, since the catalog is
 read, amended and written back.
 
