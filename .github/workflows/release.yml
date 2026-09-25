@@ -1,0 +1,110 @@
+name: Release
+
+# One integration at a time, named by the tag `<id>-v<version>` or by hand. Publishes the bundle
+# as `<id>/<version>/<id>.tar.gz` in the integrations bucket, with its checksum beside it, and
+# lists the release in the bucket's catalog.
+on:
+  push:
+    tags: ["*-v*"]
+  workflow_dispatch:
+    inputs:
+      id:
+        description: "Integration id"
+        required: true
+        type: string
+      version:
+        description: "Release version, MAJOR.MINOR.PATCH — what the manifest declares"
+        required: true
+        type: string
+
+permissions: {}
+
+# The catalog is read, amended and written back: releases run one after the other.
+concurrency:
+  group: release-catalog
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve the release against the manifest
+        id: release
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          TAG_NAME: ${{ github.ref_name }}
+          INPUT_ID: ${{ inputs.id }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            ID="$INPUT_ID"; VERSION="$INPUT_VERSION"
+          else
+            ID="${TAG_NAME%-v*}"; VERSION="${TAG_NAME##*-v}"
+          fi
+          printf '%s' "$ID" | grep -Eq '^[a-z0-9_-]+$' || { echo "::error::not an integration id: $ID"; exit 1; }
+          printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::not a release version: $VERSION"; exit 1; }
+          test -f "$ID/manifest.json" || { echo "::error::no $ID/manifest.json"; exit 1; }
+          field() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get(sys.argv[2], ""))' "$ID/manifest.json" "$1"; }
+          [ "$(field id)" = "$ID" ] || { echo "::error::$ID/manifest.json declares the id '$(field id)'"; exit 1; }
+          [ "$(field version)" = "$VERSION" ] || { echo "::error::$ID/manifest.json declares version '$(field version)', not $VERSION"; exit 1; }
+          {
+            echo "id=$ID"
+            echo "version=$VERSION"
+            echo "contract=$(field contract_version)"
+            echo "repo=$(field repo)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Test the bundle
+        run: sh "${{ steps.release.outputs.id }}/test/run.sh"
+
+      - name: Pack
+        env:
+          ID: ${{ steps.release.outputs.id }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          mkdir -p "dist/$ID/$VERSION"
+          tar -czf "dist/$ID/$VERSION/$ID.tar.gz" -C "$ID" .
+          (cd "dist/$ID/$VERSION" && sha256sum "$ID.tar.gz" > SHA256SUMS)
+
+      - name: Publish the archive and list the release
+        env:
+          HF_TOKEN: ${{ secrets.HF_FUNES_INTEGRATIONS_TOKEN }}
+          ID: ${{ steps.release.outputs.id }}
+          VERSION: ${{ steps.release.outputs.version }}
+          CONTRACT: ${{ steps.release.outputs.contract }}
+          REPO: ${{ steps.release.outputs.repo }}
+        run: |
+          python3 -m venv "$RUNNER_TEMP/hfvenv"
+          "$RUNNER_TEMP/hfvenv/bin/pip" install -q -U "huggingface_hub>=1.21"
+          HF="$RUNNER_TEMP/hfvenv/bin/hf"
+          ROOT="hf://buckets/huggingface/funes-integrations"
+
+          # A published version is never replaced.
+          "$HF" buckets sync "dist/$ID/$VERSION" "$ROOT/$ID/$VERSION" --ignore-existing
+
+          "$HF" buckets cp "$ROOT/catalog.json" catalog.json 2>/dev/null \
+            || printf '{"catalog_version": 1, "integrations": {}}\n' > catalog.json
+          SHA=$(cut -d' ' -f1 "dist/$ID/$VERSION/SHA256SUMS")
+          python3 - "$ID" "$VERSION" "$CONTRACT" "$REPO" "$ROOT/$ID/$VERSION/$ID.tar.gz" "$SHA" <<'PY'
+          import json, sys
+          id, version, contract, repo, url, sha = sys.argv[1:]
+          catalog = json.load(open("catalog.json"))
+          assert catalog["catalog_version"] == 1, catalog["catalog_version"]
+          listing = catalog["integrations"].setdefault(id, {"repo": repo, "releases": []})
+          listing["repo"] = repo
+          for release in listing["releases"]:
+              if release["version"] == version and release["sha256"] != sha:
+                  sys.exit(f"{id} {version} is already published with another digest; bump the version")
+          listing["releases"] = [r for r in listing["releases"] if r["version"] != version]
+          listing["releases"].append({"version": version, "contract_version": int(contract), "url": url, "sha256": sha})
+          with open("catalog.json", "w") as out:
+              json.dump(catalog, out, indent=2)
+              out.write("\n")
+          PY
+          "$HF" buckets cp catalog.json "$ROOT/catalog.json"

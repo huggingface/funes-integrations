@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  bundles:
+    name: Bundle tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        id: [claude, codex, hermes, pi]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Each bundle's own suite: its converter, its setup and its hooks, driven against fakes.
+      - name: Test the bundle
+        run: sh "${{ matrix.id }}/test/run.sh"

@@ -13,7 +13,7 @@ of the funes binary on PATH.
 pi exposes its lifecycle to extensions, so the automation rides along too: each
 completed turn indexes the session locally, and — with a memory bound — the
 session boundaries publish to it, through the same scripts every other agent
-drives. See [automation.md](../../docs/automation.md).
+drives. See funes's [automation.md](https://github.com/huggingface/funes/blob/main/docs/automation.md).
 
 ## Install
 
@@ -24,15 +24,12 @@ Once `funes` is on your PATH, one command extracts this extension to a fixed
 funes add pi
 ```
 
-funes installs the extension from this directory, and a re-run refreshes a copy
-that has drifted (`--force` rewrites even when it already matches).
+funes installs the extension from its published release; `funes add pi --update`
+brings an install forward to the newest one, and `funes add pi --from ./pi`
+installs this checkout's copy.
 
-For development from a funes checkout you can also install the package directly
-with `pi install ./integrations/pi`, or load it for a single run with
-`pi -e ./integrations/pi`.
-
-> There's no `pi install git:…/funes`: pi has no subdir/monorepo install syntax,
-> and the funes repo root is a Cargo project rather than a pi package.
+For development you can also install the package directly with `pi install ./pi`,
+or load it for a single run with `pi -e ./pi`.
 
 ## Requirements
 
