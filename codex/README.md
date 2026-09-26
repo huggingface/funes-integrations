@@ -25,10 +25,11 @@ funes add codex                    # local memory
 funes add codex <org>/<repo>       # …bound to a memory it recalls from and publishes to
 ```
 
-funes installs the plugin from its published release; `funes add codex --update` brings an install
-forward to the newest one, and `funes add codex --from ./codex` installs this checkout's copy.
-Re-running it rebinds the memory and refreshes the plugin. A Codex too old to have plugins stops
-the install rather than leaving it silently unpublished.
+funes installs the plugin from its published release and brings it to the newest one on every run;
+`funes add codex --from ./codex` installs this checkout's copy, which then runs as installed until
+named again. Re-running `funes add codex` keeps the memory bound (`funes add codex local` unbinds
+it) and refreshes the plugin. A Codex too old to have plugins stops the install rather than leaving
+it silently unpublished.
 
 An install from before the plugin is cleared on sight: its skill and scripts go, and its entries
 come out of Codex's own `hooks.json` — hooks of your own in that file stay, and the file goes only

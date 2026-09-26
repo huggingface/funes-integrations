@@ -22,9 +22,10 @@ funes add hermes                   # local memory
 funes add hermes <org>/<repo>      # …bound to a memory it recalls from and publishes to
 ```
 
-funes installs the plugin from its published release; `funes add hermes --update` brings an install
-forward to the newest one, and `funes add hermes --from ./hermes` installs this checkout's copy.
-Re-running it rebinds the memory and refreshes the plugin.
+funes installs the plugin from its published release and brings it to the newest one on every run;
+`funes add hermes --from ./hermes` installs this checkout's copy, which then runs as installed until
+named again. Re-running `funes add hermes` keeps the memory bound (`funes add hermes local` unbinds
+it) and refreshes the plugin.
 
 An install from before the plugin declared funes's hooks as shell hooks in your `config.yaml`.
 `funes add hermes` clears it: those entries come out of the file — the one edit funes makes there;
