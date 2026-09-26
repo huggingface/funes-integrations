@@ -2,7 +2,8 @@
 # funes's hermes integration: register `funes mcp` as its MCP server, and install a plugin whose
 # lifecycle hooks convert each finished turn out of hermes's SQLite store and index it, and, with a
 # memory bound, publish at session boundaries. hermes edits its own config.yaml — funes drops the
-# plugin and `hermes plugins enable` does the rest.
+# plugin and `hermes plugins enable` does the rest; the one thing funes takes out of that file is
+# the hook entries an install from before the plugin put there.
 set -eu
 
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -68,11 +69,81 @@ install_plugin() {
     fi
 }
 
-# The commands of the shell hooks an install before the plugin declared in hermes's own config.yaml.
-pre_plugin_commands() {
-    config=$1/config.yaml
-    [ -f "$config" ] || return 0
-    sed -n 's/^[[:space:]]*-[[:space:]]*command:[[:space:]]*//p' "$config" | grep -E 'funes-(index|push)\.sh' || true
+# The `hooks:` block of hermes's config.yaml as funes and hermes both write it: one event key per
+# line, each hook a `- command:` item under it, a command that may fold onto deeper lines. Mode
+# `commands` prints the command of every hook running one of funes's scripts, joined back onto one
+# line; mode `prune` prints the whole file without those hooks, without an event they leave empty,
+# and with `hooks: {}` when none remain. A block of any other shape exits 2 with nothing printed.
+hooks_awk() {
+    awk -v mode="$1" '
+    function indent(s) { match(s, /^ */); return RLENGTH }
+    function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
+    function end_item(    i) {
+        if (!in_item) return
+        if (cmd ~ /funes-(index|push)\.sh/) { if (mode == "commands") print cmd }
+        else { for (i = 1; i <= n_item; i++) ev[++n_ev] = item[i]; ev_kept++ }
+        in_item = 0; n_item = 0; cmd = ""; in_cmd = 0
+    }
+    function end_event(    i) {
+        end_item()
+        if (!in_event) return
+        if (ev_items == 0 || ev_kept > 0) {
+            hk[++n_hk] = ev_line
+            for (i = 1; i <= n_ev; i++) hk[++n_hk] = ev[i]
+            hk_kept++
+        }
+        in_event = 0; n_ev = 0; ev_kept = 0; ev_items = 0
+    }
+    function end_hooks(    i) {
+        end_event()
+        if (!in_hooks) return
+        if (mode == "prune") {
+            if (hk_kept) { print hooks_line; for (i = 1; i <= n_hk; i++) print hk[i] }
+            else print "hooks: {}"
+        }
+        in_hooks = 0; n_hk = 0; hk_kept = 0
+    }
+    function keep(line) {
+        if (in_item) item[++n_item] = line
+        else if (in_event) ev[++n_ev] = line
+        else hk[++n_hk] = line
+    }
+    !in_hooks && /^hooks:/ {
+        v = $0; sub(/^hooks:/, "", v); v = trim(v)
+        if (v == "") { in_hooks = 1; hooks_line = $0; ev_indent = 0; next }
+        if (v == "{}" || v == "[]" || v == "null" || v == "~") { if (mode == "prune") print; next }
+        exit 2
+    }
+    !in_hooks { if (mode == "prune") print; next }
+    /^[^ \t#]/ { end_hooks(); if (mode == "prune") print; next }
+    /^[ \t]*(#|$)/ { keep($0); next }
+    {
+        ind = indent($0)
+        if (ev_indent == 0) ev_indent = ind
+        if (ind == ev_indent && $0 ~ /^ *[A-Za-z_][A-Za-z0-9_-]*:/) {
+            v = $0; sub(/^ *[A-Za-z_][A-Za-z0-9_-]*:/, "", v); v = trim(v)
+            if (v != "" && v != "[]" && v != "null" && v != "~") exit 2
+            end_event(); in_event = 1; ev_line = $0; next
+        }
+        if (in_event && ind >= ev_indent && $0 ~ /^ *- /) {
+            end_item(); in_item = 1; item_indent = ind; item[++n_item] = $0; ev_items++
+            v = $0; sub(/^ *- /, "", v)
+            if (v ~ /^command:/) { sub(/^command:/, "", v); cmd = trim(v); in_cmd = 1; key_indent = ind + 2 }
+            else if (v ~ /^[A-Za-z_][A-Za-z0-9_-]*:/) { in_cmd = 0; key_indent = ind + 2 }
+            else exit 2
+            next
+        }
+        if (in_item && ind > item_indent) {
+            item[++n_item] = $0
+            if (ind == key_indent && $0 ~ /^ *[A-Za-z_][A-Za-z0-9_-]*:/) {
+                v = $0; sub(/^ */, "", v)
+                if (v ~ /^command:/) { sub(/^command:/, "", v); cmd = trim(v); in_cmd = 1 } else in_cmd = 0
+            } else if (in_cmd && ind > key_indent) cmd = cmd " " trim($0)
+            next
+        }
+        exit 2
+    }
+    END { if (in_hooks) end_hooks() }'
 }
 
 manual_add() {
@@ -137,22 +208,39 @@ forget() {
     fi
 }
 
-# Clear an install from before the plugin: its scripts are funes's, so they go, and hermes is asked
-# to revoke the approvals funes wrote for them. The hook entries themselves are in the user's own
-# config.yaml, so they are named rather than edited.
+# Clear an install from before the plugin: its scripts are funes's, so they go; hermes is asked to
+# revoke the approvals funes wrote for them; and their entries come out of the user's config.yaml,
+# which is otherwise left as it is. Entries funes cannot take out — a hooks block of a shape it
+# does not know, a file it cannot write — are named instead: hermes would run them on every turn,
+# against scripts that are gone.
 drop_pre_plugin_install() {
     home=$1
-    commands=$(pre_plugin_commands "$home")
-    if [ -n "$commands" ]; then
-        if have_hermes; then
-            printf '%s\n' "$commands" | while IFS= read -r command; do
-                hermes hooks revoke "$command" >/dev/null 2>&1 || true
-            done
+    config="$home/config.yaml"
+    if [ -f "$config" ]; then
+        if commands=$(hooks_awk commands <"$config"); then
+            if [ -n "$commands" ]; then
+                if have_hermes; then
+                    printf '%s\n' "$commands" | while IFS= read -r command; do
+                        hermes hooks revoke "$command" >/dev/null 2>&1 || true
+                    done
+                fi
+                if hooks_awk prune <"$config" >"$config.funes-tmp" && mv -f "$config.funes-tmp" "$config"; then
+                    echo "removed funes's own shell hooks from $config."
+                else
+                    rm -f "$config.funes-tmp"
+                    name_entries "$config"
+                fi
+            fi
+        elif grep -qE 'funes-(index|push)\.sh' "$config"; then
+            name_entries "$config"
         fi
-        echo "$home/config.yaml still declares funes's own shell hooks — delete the entries whose command runs funes-index.sh or funes-push.sh (\`hermes config edit\`)." >&2
     fi
     rm -f "$home/hooks/funes-index.sh" "$home/hooks/funes-push.sh" "$home/hooks/funes-sync.log"
     rmdir "$home/hooks" 2>/dev/null || true
+}
+
+name_entries() {
+    echo "$1 still declares funes's own shell hooks — delete the entries whose command runs funes-index.sh or funes-push.sh (\`hermes config edit\`)." >&2
 }
 
 remove() {
