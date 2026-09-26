@@ -21,6 +21,11 @@ mkdir -p "$HOME/.funes/agents" "$tmp/bin"
 cat >"$tmp/bin/hermes" <<'FAKE'
 #!/bin/sh
 printf '%s\n' "$*" >>"$FUNES_TEST_CLI_LOG"
+# `mcp remove` asks before it acts and reads the answer from stdin; hermes would wait where the
+# fake fails.
+case "$1 ${2:-}" in
+"mcp remove") IFS= read -r answer || { echo "hermes: no answer to the removal prompt" >&2; exit 3; } ;;
+esac
 FAKE
 chmod +x "$tmp/bin/hermes"
 export PATH="$tmp/bin:/usr/bin:/bin"

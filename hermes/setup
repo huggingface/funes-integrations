@@ -121,11 +121,12 @@ add() {
 }
 
 # Run one `hermes` removal. A registration hermes has already forgotten is a success; any other
-# failure keeps its diagnostics rather than claiming a partial uninstall worked.
+# failure keeps its diagnostics rather than claiming a partial uninstall worked. `mcp remove` asks
+# before it acts, and its output is captured here, so the answer is fed rather than awaited.
 forget() {
     absent=$1
     shift
-    if ! out=$(hermes "$@" 2>&1); then
+    if ! out=$(printf 'y\n' | hermes "$@" 2>&1); then
         case "$out" in
         *"$absent"*) : ;;
         *)
