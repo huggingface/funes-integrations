@@ -10,10 +10,12 @@ just fronted by a thin pi tool. Which tools those are isn't listed here: it
 registers whatever `tools/list` returns, so a pi session sees exactly the surface
 of the funes binary on PATH.
 
-pi exposes its lifecycle to extensions, so the automation rides along too: each
-completed turn indexes the session locally, and — with a memory bound — the
-session boundaries publish to it, through the same scripts every other agent
-drives. See funes's [automation.md](https://github.com/huggingface/funes/blob/main/docs/automation.md).
+pi exposes its lifecycle to extensions, so the automation rides in the same
+extension: `turn_end` converts the turn just completed and indexes it, and — with
+a memory bound — `session_shutdown` publishes, as does `session_start` when the
+process is fresh (its other starts follow a shutdown that just published).
+Nothing outside `~/.funes/agents/pi` is configured. How the hooks work is in
+this repository's [README](../README.md#how-the-bundles-automate).
 
 ## Install
 
@@ -30,6 +32,15 @@ installs this checkout's copy.
 
 For development you can also install the package directly with `pi install ./pi`,
 or load it for a single run with `pi -e ./pi`.
+
+## Remove
+
+```sh
+funes remove pi
+```
+
+Unregisters the extension and takes the whole install with it. Your memory and
+pi's own sessions are untouched.
 
 ## Requirements
 

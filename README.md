@@ -10,7 +10,33 @@ Integrations maintained by their authors live wherever their authors put them;
 One directory per integration, each a bundle as funes's
 [integration contract](https://github.com/huggingface/funes/blob/main/docs/add.md#the-integration-contract)
 describes it: a `manifest.json`, a `setup` executable, whatever the integration needs beside them,
-and its own tests under `test/`. What each one installs into its agent is in funes's
+and its own tests under `test/`. What each one installs into its agent, which of its events it
+hooks, and what it needs on the box is in its README; what they share is below.
+
+## How the bundles automate
+
+Each bundle gives its agent the funes read tools — `funes mcp` registered as an MCP server, or
+fronted by the extension where the agent has no MCP client — and drives one script of its own,
+`funes-index.sh`, in two modes. Per turn, it converts the session that just changed into funes's
+spool and runs `funes index --harness <id>`, then converts any other session changed since it last
+ran, so a session whose own hook never fired — untrusted, timed out, a host that died mid-turn — is
+caught at the next turn; the run is time-boxed, so a backlog fills in a bounded step per turn. At
+the session boundaries, as `funes-index.sh --publish` and only with a memory bound, it converts,
+indexes — waiting out a per-turn run's lock — and pushes; it runs at the session's end and again at
+the next start, catching up whatever a missed end left behind. The conversion is the bundle's own
+converter: a script for Claude Code and Codex, the extension or plugin itself for pi and Hermes. The
+work runs detached, so a hook returns in well under a second and never blocks the turn or trips a
+timeout. The memory rides in a file beside the scripts, so every hooks file is static.
+
+| Bundle | Per turn | Publish, with a memory bound |
+| --- | --- | --- |
+| `claude` | `Stop`, `SubagentStop` | `SessionEnd`, `SessionStart` |
+| `codex` | `Stop` | `SessionEnd`, `SessionStart` |
+| `hermes` | `post_llm_call` | `on_session_finalize`, `on_session_start` |
+| `pi` | `turn_end` | `session_shutdown`, and `session_start` when the process is fresh |
+
+What funes guarantees around these — local-first indexing, one writer at a time, the secrets gate,
+the wrong-memory guard — is in funes's
 [automation docs](https://github.com/huggingface/funes/blob/main/docs/automation.md).
 
 ## Developing
