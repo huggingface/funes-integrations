@@ -26,9 +26,10 @@ Once `funes` is on your PATH, one command extracts this extension to a fixed
 funes add pi
 ```
 
-funes installs the extension from its published release; `funes add pi --update`
-brings an install forward to the newest one, and `funes add pi --from ./pi`
-installs this checkout's copy.
+funes installs the extension from its published release and brings it to the
+newest one on every run; `funes add pi --from ./pi` installs this checkout's
+copy, which then runs as installed until named again. Re-running `funes add pi`
+keeps the memory bound; `funes add pi local` unbinds it.
 
 For development you can also install the package directly with `pi install ./pi`,
 or load it for a single run with `pi -e ./pi`.

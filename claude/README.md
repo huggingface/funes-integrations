@@ -21,11 +21,12 @@ funes add claude                   # local memory
 funes add claude <org>/<repo>      # …bound to a memory it recalls from and publishes to
 ```
 
-funes installs the plugin from its published release; `funes add claude --update` brings an install
-forward to the newest one, and `funes add claude --from ./claude` installs this checkout's copy.
-Re-running it rebinds the memory and refreshes the plugin — Claude keeps a plugin's content until
-it is reinstalled, so the plugin is uninstalled and installed again. An install from before the
-registry, at `~/.funes/integrations/claude-plugin`, is unregistered and deleted on sight.
+funes installs the plugin from its published release and brings it to the newest one on every run;
+`funes add claude --from ./claude` installs this checkout's copy, which then runs as installed until
+named again. Re-running `funes add claude` keeps the memory bound (`funes add claude local` unbinds
+it) and refreshes the plugin — Claude keeps a plugin's content until it is reinstalled, so the
+plugin is uninstalled and installed again. An install from before the registry, at
+`~/.funes/integrations/claude-plugin`, is unregistered and deleted on sight.
 
 ## Remove
 
