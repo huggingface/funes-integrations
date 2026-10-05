@@ -40,6 +40,8 @@ Your memory and Claude Code's own transcripts are untouched.
 ## Requirements
 
 - `funes` on `PATH` (set `FUNES_BIN` to override the binary path).
+- Set `FUNES_HOOK_UNSET` to space-separated variable names the detached index worker must not
+  inherit, such as a supervisor's per-run token.
 - `claude` on `PATH`; without it the files are installed and the commands to register them printed.
 - A stock `jq`, 1.6 or newer: the converter is jq, and there is nothing to capture without it.
   macOS 15 and newer ship one; elsewhere `apt install jq`, `dnf install jq`, `apk add jq`.

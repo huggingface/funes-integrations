@@ -185,5 +185,6 @@ payload=$(mktemp "${TMPDIR:-/tmp}/funes-payload.XXXXXX") || {
     exit 0
 }
 cat >"$payload"
+for v in ${FUNES_HOOK_UNSET:-}; do unset "$v"; done
 nohup sh "$0" --worker "$payload" "$mode" >/dev/null 2>&1 </dev/null &
 exit 0

@@ -19,6 +19,7 @@ mkdir -p "$HOME/.funes/agents" "$tmp/bin"
 cat >"$tmp/bin/funes" <<'FAKE'
 #!/bin/sh
 printf '%s: %s\n' "${HF_HUB_USER_AGENT_ORIGIN:-}" "$*" >>"$FUNES_TEST_CLI_LOG"
+[ -z "${JOB_TOKEN:-}" ] || printf '%s\n' "$JOB_TOKEN" >>"$FUNES_TEST_CLI_LOG.leaked"
 FAKE
 chmod +x "$tmp/bin/funes"
 export PATH="$tmp/bin:/usr/bin:/bin"
@@ -84,14 +85,21 @@ $(cat "$FUNES_TEST_CLI_LOG")"
 # larger than any argument could — handed to a detached worker, and the hook returns at once.
 tick
 rollout rollout-e.jsonl
+calls=$(wc -l <"$FUNES_TEST_CLI_LOG")
 {
     printf '{"transcript_path":"%s","session_id":"e","last_assistant_message":"' "$tree/rollout-e.jsonl"
     head -c 1100000 /dev/zero | tr '\0' x
     printf '"}'
-} | sh "$scripts/funes-index.sh"
+} | JOB_TOKEN=abc FUNES_HOOK_UNSET="JOB_TOKEN" sh "$scripts/funes-index.sh"
 for _ in $(seq 1 100); do
     [ -f "$spool/rollout-e.funes.jsonl" ] && break
     sleep 0.1
 done
 [ -f "$spool/rollout-e.funes.jsonl" ] || fail "the detached worker never converted the rollout the hook named"
+for _ in $(seq 1 100); do
+    [ "$(wc -l <"$FUNES_TEST_CLI_LOG")" -gt "$calls" ] && break
+    sleep 0.1
+done
+[ "$(wc -l <"$FUNES_TEST_CLI_LOG")" -gt "$calls" ] || fail "the detached worker never indexed"
+[ ! -e "$FUNES_TEST_CLI_LOG.leaked" ] || fail "the detached worker inherited a variable FUNES_HOOK_UNSET names"
 echo "codex hooks: ok"

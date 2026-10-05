@@ -47,6 +47,8 @@ an install from before the plugin the same way. Your memory and Codex's own roll
 ## Requirements
 
 - `funes` on `PATH` (set `FUNES_BIN` to override the binary path).
+- Set `FUNES_HOOK_UNSET` to space-separated variable names the detached index worker must not
+  inherit, such as a supervisor's per-run token.
 - `codex` on `PATH`, with plugins; without it the files are installed and the commands to register
   them printed.
 - A stock `jq`, 1.6 or newer: the converter is jq, and there is nothing to capture without it.
