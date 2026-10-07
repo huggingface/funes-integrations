@@ -29,7 +29,7 @@ Released from this repository and installed by name, `funes add <id>`.
 | --- | --- | --- | --- | --- | --- | --- |
 | [`opencode`](https://github.com/0x7067/funes-opencode) | 0x7067 | OpenCode v2 | read tools, per-turn indexing, session-boundary publish | MCP, spool, turns format | [source](https://github.com/0x7067/funes-opencode) | [install](https://github.com/0x7067/funes-opencode#install) |
 | [`jcode`](https://github.com/0x7067/funes-jcode) | 0x7067 | jcode | read tools, per-turn indexing, session-boundary publish | MCP, spool, turns format | [source](https://github.com/0x7067/funes-jcode) | [install](https://github.com/0x7067/funes-jcode#install) |
-| [`opencode-funes`](https://github.com/balcsida/opencode-funes) | balcsida | OpenCode v1 and v2 (plugin API) | read tools, per-turn indexing | MCP, spool, turns format | [source](https://github.com/balcsida/opencode-funes) | [install](https://github.com/balcsida/opencode-funes#install) · `npm install -g opencode-funes` · `funes add opencode --from "$(npm root -g)/opencode-funes/opencode"` · [issues](https://github.com/balcsida/opencode-funes/issues) |
+| [`opencode-funes`](https://github.com/balcsida/opencode-funes) | balcsida | OpenCode v1 and v2 (plugin API) | read tools, per-turn indexing | MCP, spool, turns format | [source](https://github.com/balcsida/opencode-funes) | [install](https://github.com/balcsida/opencode-funes#install) · [issues](https://github.com/balcsida/opencode-funes/issues) |
 
 ## Listing yours
 
