@@ -1,5 +1,5 @@
-// `convertLive` over sessions as pi writes them, and as it does not: at every step it must write the
-// turns file `convert` writes for the same bytes.
+// `convertLive` over sessions as pi writes them, and as it does not: at every step it must write
+// the turns file `convert` writes for the same bytes.
 //
 // The test session is grown a byte at a time, so a step ends mid-line and mid-character; those in
 // awkward-input/ in strides; one is rewritten under the same name; and one has its session header

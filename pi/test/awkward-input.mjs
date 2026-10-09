@@ -1,11 +1,11 @@
 // Sessions built to take every way the converter reads one — as bytes; as text, for a `\u` escape
-// past ASCII, for a line whose end only text can trim, or for neither, with lone surrogates and bytes
-// that are not UTF-8; and under a stem past ASCII — each beside the turns file the converter wrote
-// for it before it read any session as bytes. Reading a session as bytes is a speed, so every one of
-// them must still come out byte for byte.
+// past ASCII, for a line whose end only text can trim, or for neither, with lone surrogates and
+// bytes that are not UTF-8; and under a stem past ASCII — each beside the turns file the converter
+// wrote for it before it read any session as bytes. Reading a session as bytes is a speed, so every
+// one of them must still come out byte for byte.
 //
-// Usage: awkward-input.mjs <work-dir>; exits 1 on a file that differs. `stem` in a name stands for a stem
-// past ASCII, which the session is converted under.
+// Usage: awkward-input.mjs <work-dir>; exits 1 on a file that differs. `stem` in a name stands for
+// a stem past ASCII, which the session is converted under.
 import { copyFileSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";

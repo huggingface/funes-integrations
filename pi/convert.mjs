@@ -80,13 +80,13 @@ const isObject = (v) => typeof v === "object" && v !== null && !Array.isArray(v)
 const str = (v) => (typeof v === "string" ? v : undefined);
 
 // A session that is valid UTF-8 is read as latin1, one char a byte, so its strings hold the UTF-8
-// bytes of their text rather than the text: JSON.parse and JSON.stringify run several times faster on
-// such one-byte strings, and the turns file is written back as latin1, the same bytes. That changes
-// nothing written, because JSON.stringify escapes only `"`, `\`, control characters and lone
-// surrogates, none of them past ASCII once read: each string's bytes come back out as they went in.
-// What would break it is read as text instead, as before — a `\u` escape naming a character past
-// ASCII (decoded, it is one char, not its bytes), and a line with a non-ASCII or whitespace end, where
-// trimming must see whole characters.
+// bytes of their text rather than the text: JSON.parse and JSON.stringify run several times faster
+// on such one-byte strings, and the turns file is written back as latin1, the same bytes. That
+// changes nothing written, because JSON.stringify escapes only `"`, `\`, control characters and
+// lone surrogates, none of them past ASCII once read: each string's bytes come back out as they
+// went in. What would break it is read as text instead, as before — a `\u` escape naming a
+// character past ASCII (decoded, it is one char, not its bytes), and a line with a non-ASCII or
+// whitespace end, where trimming must see whole characters.
 const asBytes = (s) => buffer.Buffer.from(s, "utf8").toString("latin1");
 const fromBytes = (s) => buffer.Buffer.from(s, "latin1").toString("utf8");
 
@@ -124,7 +124,7 @@ function recordsOf(raw, asText) {
   return { records: parseLines(raw.toString("utf8"), false), bytes: false };
 }
 
-// The records of a file's lines, or, held as bytes, nothing once a line has an end only text can trim.
+// A file's records, or, held as bytes, nothing once a line has an end only text can trim.
 function parseLines(text, bytes) {
   const records = [];
   for (let line of text.split("\n")) {
@@ -149,7 +149,7 @@ function parseLines(text, bytes) {
   return records;
 }
 
-// Blank, for a text held as bytes: whitespace past ASCII is several bytes, so it is decoded to tell.
+// Blank, for text held as bytes: whitespace past ASCII is several bytes, so it is decoded.
 function isBlankBytes(t) {
   const i = t.search(/[^\t\n\v\f\r ]/);
   if (i === -1) return true;

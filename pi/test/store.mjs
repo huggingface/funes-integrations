@@ -2,12 +2,12 @@
 // them and, for what that must come out as, one session after another by `convertTree`.
 //
 // Usage: store.mjs <store-dir> <spool-dir>; exits 1 when the two differ, or when a machine with
-// more than one core converted none of it on a worker. The store is three projects of sixteen sessions,
-// each the test session with a long tool result added, about 12 MB in all; two projects also hold a
-// session under the same name, whose turns files are one file, the one tree order converts last.
-// That one is the largest session and the other the smallest, so converting largest first without
-// regard to tree order would keep the wrong one.
-// The sequential conversion is left in <spool-dir>, for the CLI's to be checked against.
+// more than one core converted none of it on a worker. The store is three projects of sixteen
+// sessions, each the test session with a long tool result added, about 12 MB in all; two projects
+// also hold a session under the same name, whose turns files are one file, the one tree order
+// converts last. That one is the largest session and the other the smallest, so converting largest
+// first without regard to tree order would keep the wrong one. The sequential conversion is left in
+// <spool-dir>, for the CLI's to be checked against.
 import { readFileSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
 import { availableParallelism, cpus } from "node:os";
 import { dirname, join } from "node:path";
@@ -33,7 +33,8 @@ for (let p = 0; p < 3; p++) {
   const project = join(store, `--project-${p}--`);
   mkdirSync(project, { recursive: true });
   for (let s = 0; s < 16; s++) {
-    // Escapes, non-ASCII and a line's worth of output per row, so no two sessions are the same size.
+    // Escapes, non-ASCII and a line's worth of output per row, so no two sessions are the same
+    // size.
     const output = `row ${p}.${s}\t"quoted" \\ back — ünïcode ✓ ${"x".repeat(40 + s)}\n`.repeat(3000 + 100 * s);
     writeFileSync(join(project, `2026-04-13T09-28-54-581Z_${p}-${s}.jsonl`), withResult(`r${p}${s}`, output));
   }
