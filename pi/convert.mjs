@@ -421,10 +421,10 @@ const THREAD_BYTES = 4 << 20;
  * converted in tree order as `convertTree` would, the last one's file kept.
  *
  * A worker starts as the sizing reaches its share of the store, so it boots while the rest is
- * sized, and a store too small for one starts none. Each entry records, in a shared slot, how many of its
- * sessions were written; an entry a worker claimed and never finished — it could not start, or it
- * died — is converted here once the workers are gone, so a runtime without worker threads loses
- * only the speed. Resolves to the number written and how many workers wrote any of it. */
+ * sized, and a store too small for one starts none. Each entry records, in a shared slot, how many
+ * of its sessions were written; an entry a worker claimed and never finished — it could not start,
+ * or it died — is converted here once the workers are gone, so a runtime without worker threads
+ * loses only the speed. Resolves to the number written and how many workers wrote any of it. */
 export function convertTreeParallel(root, spool) {
   const paths = sessionsUnder(root, 0, "");
   const cores = (typeof os.availableParallelism === "function" ? os.availableParallelism() : os.cpus().length) || 1;
