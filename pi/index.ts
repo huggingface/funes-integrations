@@ -32,7 +32,7 @@ import { existsSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync }
 import { fileURLToPath } from "node:url";
 import { dirname, join, sep } from "node:path";
 
-import { convertLive, convertTree } from "./convert.mjs";
+import { convertLive, convertTree, forgetLive } from "./convert.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FUNES_BIN = process.env.FUNES_BIN || "funes";
@@ -234,6 +234,7 @@ function convertSession(ctx: any): string {
       convertLive(file, SPOOL);
       return file;
     }
+    forgetLive(); // the session `convertLive` holds is not this one, and nothing will replace it
   } catch {}
   return "";
 }
@@ -324,6 +325,7 @@ export default async function (pi: any) {
 
   // A reload replaces the extension instance without ending the session: nothing to publish.
   pi.on("session_shutdown", async (event: any) => {
+    forgetLive();
     if (memory && event?.reason !== "reload") runScript(INDEX_SH, "--publish", memory);
   });
 }

@@ -6,9 +6,10 @@
 //
 // A sessions root is converted over every core, which is what `setup` runs on a whole history.
 //
-// Also a module — `convert` for one session, `convertTree` for a whole store — so a session
-// converted mid-run and one converted in bulk go through the same mapping. It uses nothing but the
-// JS runtime pi already provides.
+// Also a module — `convert` for one session, `convertTree` for a whole store, and `convertLive`
+// for the session pi is writing, which the extension calls every turn and which converts only what
+// the turn added — so a session converted mid-run and one converted in bulk go through the same
+// mapping. It uses nothing but the JS runtime pi already provides.
 //
 // `session_id` is the session file's stem, not the id on its `session` line: the stem is what funes
 // keyed pi's sessions by while it parsed them itself, and changing it would re-key every session a
@@ -31,7 +32,7 @@ import { basename, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import * as buffer from "node:buffer";
 import * as os from "node:os";
-import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
+import { Worker, isMainThread, parentPort, threadId, workerData } from "node:worker_threads";
 
 const HARNESS = "pi";
 const FORMAT = 1;
@@ -241,11 +242,6 @@ function timestamp(value) {
   return "";
 }
 
-export function turnsOf(sessionPath, sessionId) {
-  const lines = convertBytes(readSession(sessionPath).raw, start(sessionId)).toString("utf8").split("\n");
-  return lines.filter((l) => l !== "").map((l) => JSON.parse(l));
-}
-
 /** Where converting a session has got to, which a later part of it is converted from: its id and
  * cwd, as text, and how many turns are written. */
 function start(sessionId) {
@@ -306,8 +302,13 @@ export function convert(sessionPath, outArg) {
 }
 
 // The session pi is writing, as far as it is converted: its bytes through the last whole line, the
-// turns-file bytes they make, and where converting them got to.
+// turns-file bytes they make, a chunk a call, and where converting them got to.
 let live;
+
+/** Let go of the session `convertLive` holds: pi has ended it, or moved to one with no file. */
+export function forgetLive() {
+  live = undefined;
+}
 
 /** `convert` for the session pi is writing, which only grows: what it converts is the lines added
  * since the last call, while the turns file is still written whole, the same bytes `convert`
@@ -320,25 +321,26 @@ export function convertLive(sessionPath, outArg) {
     live?.path === sessionPath &&
     raw.length >= live.read.length &&
     raw.compare(live.read, 0, live.read.length, 0, live.read.length) === 0;
-  if (!kept) live = { path: sessionPath, read: raw.subarray(0, 0), turns: raw.subarray(0, 0), at: start(stem) };
+  if (!kept) live = { path: sessionPath, read: raw.subarray(0, 0), turns: [], at: start(stem) };
 
   const end = raw.lastIndexOf(10) + 1;
   if (end > live.read.length) {
     const at = { ...live.at };
     const added = convertBytes(raw.subarray(live.read.length, end), at);
-    if (added) live = { path: sessionPath, read: raw.subarray(0, end), turns: buffer.Buffer.concat([live.turns, added]), at };
+    if (added) live = { path: sessionPath, read: raw.subarray(0, end), turns: [...live.turns, added], at };
     else {
       const fresh = start(stem);
-      live = { path: sessionPath, read: raw.subarray(0, end), turns: convertBytes(raw.subarray(0, end), fresh), at: fresh };
+      const turns = [convertBytes(raw.subarray(0, end), fresh)];
+      live = { path: sessionPath, read: raw.subarray(0, end), turns, at: fresh };
     }
   }
   // A last line without its newline may still be being written: converted for this file, not kept.
   let turns = live.turns;
   if (end < raw.length) {
     const tail = convertBytes(raw.subarray(end), { ...live.at });
-    turns = tail ? buffer.Buffer.concat([turns, tail]) : convertBytes(raw, start(stem));
+    turns = tail ? [...turns, tail] : [convertBytes(raw, start(stem))];
   }
-  return writeTurns(outFor(outArg, stem), turns, stat);
+  return writeTurns(outFor(outArg, stem), buffer.Buffer.concat(turns), stat);
 }
 
 // The turns file at `out`, written atomically and stamped with the session's own time.
@@ -408,76 +410,89 @@ function convertEach(paths, spool) {
   return written;
 }
 
-// A worker thread costs about what converting a few megabytes does, so a store smaller than this
-// per thread is converted on this one alone.
+// A worker thread costs about what converting a few megabytes does: one is started for each this
+// many bytes of the store past the first.
 const THREAD_BYTES = 4 << 20;
-// Fewer sessions than this are not worth starting workers for before knowing their size.
-const THREAD_SESSIONS = 8;
 
 /** `convertTree` over every core, for the bulk conversion of a whole store: parsing and serializing
  * are the cost, and both are per session. The sessions form one queue, largest first, that this
  * thread and its workers claim from through a shared counter, so a thread on a slow core takes
- * fewer sessions rather than holding back the run. Sessions sharing a stem share a turns file, so
- * they are one entry, converted in tree order as `convertTree` would, the last one's file kept.
- * The workers start before the sessions are sized, so they boot while the queue is built; one the
- * store turns out too small for is handed no queue, and claims nothing from the counter. A worker that cannot start leaves the
- * queue to the rest, so a runtime without worker threads loses only the speed. Resolves to the
- * number written. */
-function convertTreeParallel(root, spool) {
+ * fewer sessions rather than holding back the run. Sessions that share a turns file are one entry,
+ * converted in tree order as `convertTree` would, the last one's file kept.
+ *
+ * A worker starts as the sizing reaches its share of the store, so it boots while the rest is
+ * sized, and a store too small for one starts none. Each entry records, in a shared slot, how many of its
+ * sessions were written; an entry a worker claimed and never finished — it could not start, or it
+ * died — is converted here once the workers are gone, so a runtime without worker threads loses
+ * only the speed. Resolves to the number written and how many workers wrote any of it. */
+export function convertTreeParallel(root, spool) {
   const paths = sessionsUnder(root, 0, "");
   const cores = (typeof os.availableParallelism === "function" ? os.availableParallelism() : os.cpus().length) || 1;
+  const byOut = new Map();
   const workers = [];
-  if (paths.length >= THREAD_SESSIONS) {
-    for (let i = 1; i < Math.min(cores, paths.length); i++) {
-      try {
-        workers.push(new Worker(new URL(import.meta.url), { workerData: { piConvert: true } }));
-      } catch {
-        break;
-      }
-    }
-  }
-
-  const byStem = new Map();
+  let bytes = 0;
   for (const p of paths) {
-    const stem = basename(p);
-    if (!byStem.has(stem)) byStem.set(stem, { paths: [], size: 0 });
-    const entry = byStem.get(stem);
+    const out = outFor(spool, stemOf(p));
+    if (!byOut.has(out)) byOut.set(out, { paths: [], size: 0 });
+    const entry = byOut.get(out);
     entry.paths.push(p);
     try {
-      entry.size += statSync(p).size;
+      const size = statSync(p).size;
+      entry.size += size;
+      bytes += size;
     } catch {}
+    if (workers.length < Math.min(cores, paths.length) - 1 && bytes > (workers.length + 1) * THREAD_BYTES) {
+      try {
+        workers.push(new Worker(new URL(import.meta.url), { workerData: { piConvert: true } }));
+      } catch {}
+    }
   }
-  const entries = [...byStem.values()].sort((a, b) => b.size - a.size);
-  const queue = entries.map((e) => e.paths);
-  const bytes = entries.reduce((n, e) => n + e.size, 0);
-  const wanted = Math.min(cores, queue.length, Math.ceil(bytes / THREAD_BYTES)) - 1;
+  const queue = [...byOut.values()].sort((a, b) => b.size - a.size).map((e) => e.paths);
 
-  const next = new Int32Array(new SharedArrayBuffer(4));
-  const running = workers.map(
-    (worker, i) =>
+  // `next` is the queue's head; `written[i]` is 1 + how many of entry i's sessions were written, 0
+  // until it is converted, and `by[i]` the thread that converted it.
+  const work = {
+    queue,
+    spool,
+    next: new Int32Array(new SharedArrayBuffer(4)),
+    written: new Int32Array(new SharedArrayBuffer(4 * queue.length)),
+    by: new Int32Array(new SharedArrayBuffer(4 * queue.length)),
+  };
+  const gone = workers.map(
+    (worker) =>
       new Promise((resolve) => {
-        worker.once("message", resolve);
-        worker.once("error", () => resolve(0));
-        worker.once("exit", () => resolve(0));
-        worker.postMessage(i < wanted ? { queue, spool, next } : null);
+        worker.once("error", () => {});
+        worker.once("exit", resolve);
+        worker.postMessage(work);
       }),
   );
-  const here = drain(queue, spool, next);
-  return Promise.all(running).then((counts) => counts.reduce((a, b) => a + b, here));
+  drain(work);
+  return Promise.all(gone).then(() => {
+    let written = 0;
+    const writers = new Set();
+    for (let i = 0; i < queue.length; i++) {
+      if (Atomics.load(work.written, i) === 0) convertEntry(work, i);
+      written += Atomics.load(work.written, i) - 1;
+      if (work.by[i] !== threadId) writers.add(work.by[i]);
+    }
+    return { written, workers: writers.size };
+  });
 }
 
-// Convert sessions off the shared queue until it is empty; returns how many were written.
-function drain(queue, spool, next) {
-  let written = 0;
-  for (let i = Atomics.add(next, 0, 1); i < queue.length; i = Atomics.add(next, 0, 1)) {
-    written += convertEach(queue[i], spool).length;
+// Convert entries off the shared queue until it is empty.
+function drain(work) {
+  for (let i = Atomics.add(work.next, 0, 1); i < work.queue.length; i = Atomics.add(work.next, 0, 1)) {
+    convertEntry(work, i);
   }
-  return written;
 }
 
-if (!isMainThread && workerData?.piConvert) {
-  parentPort.once("message", (work) => parentPort.postMessage(work ? drain(work.queue, work.spool, work.next) : 0));
+function convertEntry(work, i) {
+  const written = convertEach(work.queue[i], work.spool).length;
+  Atomics.store(work.by, i, threadId);
+  Atomics.store(work.written, i, written + 1);
 }
+
+if (!isMainThread && workerData?.piConvert) parentPort.once("message", drain);
 
 // `import.meta.url` is the resolved path; argv[1] is not, so a run through a symlinked directory
 // (macOS's /tmp) would otherwise miss.
@@ -487,6 +502,6 @@ if (isMainThread && process.argv[1] && import.meta.url === pathToFileURL(realpat
     console.error("usage: convert.mjs <session.jsonl | sessions-root> <spool-dir>");
     process.exit(2);
   }
-  if (statSync(src).isDirectory()) convertTreeParallel(src, spool).then((n) => console.log(n));
+  if (statSync(src).isDirectory()) convertTreeParallel(src, spool).then(({ written }) => console.log(written));
   else console.log([convert(src, spool)].length);
 }

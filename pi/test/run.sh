@@ -25,10 +25,11 @@ if ! "$JS" "$HERE/same-second.mjs" "$out/session.funes.jsonl" "$HERE/session.jso
 fi
 echo "pi converter: ok"
 
-# A whole store, converted over worker threads, comes out as each of its sessions converted alone.
-"$JS" "$HERE/store.mjs" "$out/store" "$out/alone"
-if [ "$("$JS" "$HERE/../convert.mjs" "$out/store" "$out/bulk")" != 48 ] || ! diff -r "$out/alone" "$out/bulk" >/dev/null; then
-    echo "pi converter: a store converted in bulk is not its sessions converted one by one" >&2
+# A whole store, converted over worker threads, comes out as its sessions converted one by one —
+# from the module, and from the command `setup` runs.
+"$JS" "$HERE/store.mjs" "$out/store" "$out/sequential"
+if [ "$("$JS" "$HERE/../convert.mjs" "$out/store" "$out/bulk")" != 50 ] || ! diff -r "$out/sequential" "$out/bulk" >/dev/null; then
+    echo "pi converter: a store converted by the command is not its sessions converted one by one" >&2
     exit 1
 fi
 echo "pi converter, a whole store: ok"
