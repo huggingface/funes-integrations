@@ -35,8 +35,8 @@ echo "pi converter, a whole store: ok"
 
 # Sessions that take every way a session is read, against what the converter wrote for them before
 # it read one as bytes.
-"$JS" "$HERE/awkward.mjs" "$out/awkward"
-echo "pi converter, awkward sessions: ok"
+"$JS" "$HERE/awkward-input.mjs" "$out/awkward-input"
+echo "pi converter, awkward input: ok"
 
 # The session pi is writing, converted as it grows: what a whole conversion writes, at every step.
 "$JS" "$HERE/live.mjs" "$out/live"

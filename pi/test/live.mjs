@@ -1,8 +1,8 @@
 // `convertLive` over sessions as pi writes them, and as it does not: at every step it must write the
 // turns file `convert` writes for the same bytes.
 //
-// The test session is grown a byte at a time, so a step ends mid-line and mid-character; the
-// awkward ones in strides; one is rewritten under the same name; and one has its session header
+// The test session is grown a byte at a time, so a step ends mid-line and mid-character; those in
+// awkward-input/ in strides; one is rewritten under the same name; and one has its session header
 // after a turn, whose cwd then belongs on the turn already written.
 //
 // Usage: live.mjs <work-dir>; exits 1 at the first step that differs.
@@ -37,9 +37,9 @@ const test = Buffer.concat([
 ]);
 grow(test, 1, "the test session");
 
-const awkward = join(here, "awkward");
+const awkward = join(here, "awkward-input");
 for (const name of readdirSync(awkward).filter((n) => n.endsWith(".jsonl") && !n.endsWith(".funes.jsonl"))) {
-  grow(readFileSync(join(awkward, name)), 61, `awkward/${name}`);
+  grow(readFileSync(join(awkward, name)), 61, `awkward-input/${name}`);
 }
 
 // Rewritten under the same name: shorter, then the same length with other bytes.

@@ -4,7 +4,7 @@
 // for it before it read any session as bytes. Reading a session as bytes is a speed, so every one of
 // them must still come out byte for byte.
 //
-// Usage: awkward.mjs <work-dir>; exits 1 on a file that differs. `stem` in a name stands for a stem
+// Usage: awkward-input.mjs <work-dir>; exits 1 on a file that differs. `stem` in a name stands for a stem
 // past ASCII, which the session is converted under.
 import { copyFileSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import { convert } from "../convert.mjs";
 
 const [work] = process.argv.slice(2);
-const here = join(dirname(fileURLToPath(import.meta.url)), "awkward");
+const here = join(dirname(fileURLToPath(import.meta.url)), "awkward-input");
 mkdirSync(work, { recursive: true });
 
 let failed = 0;
@@ -22,7 +22,7 @@ for (const name of readdirSync(here).filter((n) => n.endsWith(".jsonl") && !n.en
   copyFileSync(join(here, name), session);
   const got = readFileSync(convert(session, join(work, "out")));
   if (!got.equals(readFileSync(join(here, name.replace(/\.jsonl$/, ".funes.jsonl"))))) {
-    console.error(`awkward/${name}: the turns file changed`);
+    console.error(`awkward-input/${name}: the turns file changed`);
     failed++;
   }
 }
