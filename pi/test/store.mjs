@@ -33,8 +33,7 @@ for (let p = 0; p < 3; p++) {
   const project = join(store, `--project-${p}--`);
   mkdirSync(project, { recursive: true });
   for (let s = 0; s < 16; s++) {
-    // Escapes, non-ASCII and a line's worth of output per row, so no two sessions are the same
-    // size.
+    // Escapes, non-ASCII and a row's worth of output each, so no two sessions are the same size.
     const output = `row ${p}.${s}\t"quoted" \\ back — ünïcode ✓ ${"x".repeat(40 + s)}\n`.repeat(3000 + 100 * s);
     writeFileSync(join(project, `2026-04-13T09-28-54-581Z_${p}-${s}.jsonl`), withResult(`r${p}${s}`, output));
   }
