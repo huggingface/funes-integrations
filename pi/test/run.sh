@@ -25,6 +25,23 @@ if ! "$JS" "$HERE/same-second.mjs" "$out/session.funes.jsonl" "$HERE/session.jso
 fi
 echo "pi converter: ok"
 
+# A whole store, converted over worker threads, comes out as each of its sessions converted alone.
+"$JS" "$HERE/store.mjs" "$out/store" "$out/alone"
+if [ "$("$JS" "$HERE/../convert.mjs" "$out/store" "$out/bulk")" != 48 ] || ! diff -r "$out/alone" "$out/bulk" >/dev/null; then
+    echo "pi converter: a store converted in bulk is not its sessions converted one by one" >&2
+    exit 1
+fi
+echo "pi converter, a whole store: ok"
+
+# Sessions that take every way a session is read, against what the converter wrote for them before
+# it read one as bytes.
+"$JS" "$HERE/awkward.mjs" "$out/awkward"
+echo "pi converter, awkward sessions: ok"
+
+# The session pi is writing, converted as it grows: what a whole conversion writes, at every step.
+"$JS" "$HERE/live.mjs" "$out/live"
+echo "pi converter, live: ok"
+
 # The extension's startup, run as pi runs it: node strips the types itself from 22.18 on; bun and
 # deno always did.
 case "$JS" in

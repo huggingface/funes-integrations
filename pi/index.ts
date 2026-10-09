@@ -32,7 +32,7 @@ import { existsSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync }
 import { fileURLToPath } from "node:url";
 import { dirname, join, sep } from "node:path";
 
-import { convert, convertTree } from "./convert.mjs";
+import { convertLive, convertTree } from "./convert.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FUNES_BIN = process.env.FUNES_BIN || "funes";
@@ -223,14 +223,15 @@ function runScript(script: string, ...args: string[]) {
 }
 
 // The session pi is writing, as a turns file in the spool, returning its path. Inline rather than
-// detached: it is a read and an atomic write, and the file has to exist before the indexer is
-// spawned. An ephemeral session (`--no-session`) has no file and nothing to convert.
+// detached: it is a read, the lines the turn added and an atomic write, and the file has to exist
+// before the indexer is spawned. An ephemeral session (`--no-session`) has no file and nothing to
+// convert.
 function convertSession(ctx: any): string {
   if (!SPOOL) return "";
   try {
     const file = ctx?.sessionManager?.getSessionFile?.();
     if (file) {
-      convert(file, SPOOL);
+      convertLive(file, SPOOL);
       return file;
     }
   } catch {}
