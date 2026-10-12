@@ -120,9 +120,24 @@ def _open(db):
     return sqlite3.connect(f"file:{db}?mode=ro", uri=True)
 
 
-def _has_cwd(conn):
+def _has_session_column(conn, name):
     """hermes schema versions differ and naming a missing column is a hard SQL error, not a NULL."""
-    return conn.execute("SELECT 1 FROM pragma_table_info('sessions') WHERE name = 'cwd'").fetchone() is not None
+    return (
+        conn.execute("SELECT 1 FROM pragma_table_info('sessions') WHERE name = ?", (name,)).fetchone()
+        is not None
+    )
+
+
+def _is_cron_session(db, session_id):
+    """Whether hermes explicitly marks this session as scheduled. An older schema, missing row or
+    NULL source is not evidence that history is disposable, so each fails open."""
+    if os.environ.get("FUNES_CONVERT_CRON") == "1":
+        return False
+    with _open(db) as conn:
+        if not _has_session_column(conn, "source"):
+            return False
+        row = conn.execute("SELECT source FROM sessions WHERE id = ?", (session_id,)).fetchone()
+    return row is not None and row[0] == "cron"
 
 
 def session_ids(db):
@@ -151,7 +166,7 @@ def turns_of(db, session_id):
     with _open(db) as conn:
         conn.row_factory = sqlite3.Row
         cwd = None
-        if _has_cwd(conn):
+        if _has_session_column(conn, "cwd"):
             row = conn.execute("SELECT cwd FROM sessions WHERE id = ?", (session_id,)).fetchone()
             if row is not None and isinstance(row["cwd"], str):
                 cwd = row["cwd"]
@@ -193,11 +208,13 @@ def latest_timestamp(db, session_id):
 
 
 def convert(db, spool, session_id):
-    """One session into `<spool>/<session id>.funes.jsonl`; returns the path written. The id comes
-    out of the store and names a file, so one that is not a plain name is refused rather than
-    written wherever it points."""
+    """One non-cron session into `<spool>/<session id>.funes.jsonl`; returns the path written or
+    None when the session is skipped. The id comes out of the store and names a file, so one that
+    is not a plain name is refused rather than written wherever it points."""
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", session_id):
         raise ValueError(f"hermes session id {session_id!r} is not a file name")
+    if _is_cron_session(db, session_id):
+        return None
     out = os.path.join(spool, f"{session_id}.funes.jsonl")
     body = "".join(compact(t) + "\n" for t in turns_of(db, session_id))
     os.makedirs(spool, exist_ok=True)
@@ -220,7 +237,9 @@ def convert_all(db, spool):
     written = []
     for sid in session_ids(db):
         try:
-            written.append(convert(db, spool, sid))
+            path = convert(db, spool, sid)
+            if path is not None:
+                written.append(path)
         except Exception as e:
             print(f"skipped session {sid!r}: {e}", file=sys.stderr)
     return written
@@ -231,5 +250,9 @@ if __name__ == "__main__":
         print("usage: convert.py <state.db> <spool-dir> [session-id]", file=sys.stderr)
         raise SystemExit(2)
     store, target = sys.argv[1], sys.argv[2]
-    written = [convert(store, target, sys.argv[3])] if len(sys.argv) == 4 else convert_all(store, target)
+    if len(sys.argv) == 4:
+        path = convert(store, target, sys.argv[3])
+        written = [path] if path is not None else []
+    else:
+        written = convert_all(store, target)
     print(len(written))

@@ -43,6 +43,12 @@ Disables and deletes the plugin, removes the MCP registration, and clears an ins
 the plugin the same way. Other hooks, approvals, and config keys remain; your memory and Hermes's
 own session store are untouched.
 
+## Scheduled sessions
+
+The converter skips Hermes sessions whose `source` is `cron`, keeping scheduler boilerplate out of
+the memory. Set `FUNES_CONVERT_CRON=1` for a run that should include them. Stores from Hermes
+versions without a `source` column, and sessions whose source is missing, are converted normally.
+
 ## Requirements
 
 - `funes` on `PATH` (set `FUNES_BIN` to override the binary path).
