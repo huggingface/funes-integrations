@@ -66,7 +66,7 @@ agent_version() {
         2>/dev/null | head -n 1
 }
 
-# One rollout into the spool, named after its own file stem.
+# One rollout into the spool, named after its own file stem. Fails when the converter does.
 convert_one() {
     jq=$1
     src=$2
@@ -77,6 +77,7 @@ convert_one() {
         log "convert: $stem"
     else
         log "convert: FAILED for $src"
+        return 1
     fi
 }
 
@@ -84,21 +85,21 @@ convert_one() {
 # out, a host that died mid-turn. What the spool holds cannot say which those are (funes drains it),
 # so the sweep keeps its own mark: the previous sweep's stamp, or, before there is one, the `spool`
 # record `setup add` wrote just before it converted the history. The rollout the payload named was
-# converted already and is skipped.
+# converted already and is skipped. The next mark is the stamp `$3` the worker took before it
+# converted anything, unless a conversion failed and dropped it.
 convert_stale() {
     jq=$1
     named=$2
+    stamp=$3
     sessions="$CODEX_DIR/sessions"
     [ -d "$sessions" ] || return 0
     mark="$HERE/swept"
     since=$mark
     [ -e "$since" ] || since="$HERE/spool"
-    # Stamped before the sweep, so a rollout written while it runs is swept again next turn.
-    : >"$mark.new"
     find "$sessions" -type f -name 'rollout-*.jsonl' -newer "$since" 2>/dev/null | while IFS= read -r src; do
-        [ "$src" = "$named" ] || convert_one "$jq" "$src"
+        [ "$src" = "$named" ] || convert_one "$jq" "$src" || rm -f "$stamp"
     done
-    mv -f "$mark.new" "$mark"
+    [ ! -e "$stamp" ] || mv -f "$stamp" "$mark"
 }
 
 # The boundary's second half: land the turns in the memory, waiting out a per-turn worker that may
@@ -132,7 +133,10 @@ publish() {
 worker() {
     payload=$1
     mode=${2:-}
-    trap 'rm -f "$payload"' EXIT
+    # The sweep's next mark, as this run stamps it: named after the process, so runs side by side
+    # never publish each other's, and dropped on exit unless the sweep published it.
+    stamp="$HERE/swept.$$"
+    trap 'rm -f "$payload" "$stamp"' EXIT
     funes=$(find_bin funes || true)
     if [ -z "$funes" ] || [ ! -x "$funes" ]; then
         log "index ABORT: funes not found; skipping."
@@ -150,12 +154,16 @@ worker() {
 
     src=$(rollout "$jq" "$payload" || true)
     tag_hub_requests "$(agent_version "$jq" "$src")"
+    # Stamped before anything is converted, the named rollout included: what is written while this
+    # run reads is newer than the mark it leaves and is swept next turn. A failed conversion drops
+    # the stamp: the mark stays where it was, and the next sweep tries again.
+    : >"$stamp"
     if [ -n "$src" ]; then
-        convert_one "$jq" "$src"
+        convert_one "$jq" "$src" || rm -f "$stamp"
     else
         log "convert: the payload named no readable rollout"
     fi
-    convert_stale "$jq" "$src"
+    convert_stale "$jq" "$src" "$stamp"
 
     if [ "$mode" = --publish ]; then
         publish
