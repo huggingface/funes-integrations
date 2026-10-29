@@ -35,7 +35,8 @@ find_bin() {
 }
 
 # One transcript into the spool, named after the session it belongs to, which is its own file stem,
-# and numbered as the memory holds it, from the rows `setup add` keeps beside this script.
+# and numbered as the memory holds it, from the rows `setup add` keeps beside this script. Fails
+# when the converter does.
 convert_one() {
     jq=$1
     src=$2
@@ -46,6 +47,7 @@ convert_one() {
         log "convert: $stem"
     else
         log "convert: FAILED for $src"
+        return 1
     fi
 }
 
@@ -69,7 +71,7 @@ agent_version() {
 # so the sweep keeps its own mark: the previous sweep's stamp, or, before there is one, the `spool`
 # record `setup add` wrote just before it converted the history. The transcript the payload named
 # was converted already and is skipped. The next mark is the stamp `$3` the worker took before it
-# converted anything.
+# converted anything, unless a conversion failed and dropped it.
 convert_stale() {
     jq=$1
     named=$2
@@ -80,9 +82,9 @@ convert_stale() {
     since=$mark
     [ -e "$since" ] || since="$HERE/spool"
     find "$projects" -type f -name '*.jsonl' -newer "$since" 2>/dev/null | while IFS= read -r src; do
-        [ "$src" = "$named" ] || convert_one "$jq" "$src"
+        [ "$src" = "$named" ] || convert_one "$jq" "$src" || rm -f "$stamp"
     done
-    mv -f "$stamp" "$mark"
+    [ ! -e "$stamp" ] || mv -f "$stamp" "$mark"
 }
 
 # The boundary's second half: land the turns in the memory, waiting out a per-turn worker that may
@@ -144,9 +146,10 @@ worker() {
     tag_hub_requests "$(agent_version "$jq" "$named")"
     # Stamped before anything is converted, the named transcript included: what is written while
     # this run reads, such as a sub-agent's last turns after its SubagentStop fired, is newer than
-    # the mark it leaves and is swept next turn.
+    # the mark it leaves and is swept next turn. A failed conversion drops the stamp: the mark stays
+    # where it was, and the next sweep tries again.
     : >"$stamp"
-    convert_one "$jq" "$named"
+    convert_one "$jq" "$named" || rm -f "$stamp"
     convert_stale "$jq" "$named" "$stamp"
 
     if [ "$mode" = --publish ]; then

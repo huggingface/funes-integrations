@@ -39,6 +39,7 @@ mkdir -p "$tree"
 fixture="$BUNDLE/claude-plugin/funes/test/session.jsonl"
 
 # The converter, wrapped so a test can act on one transcript as the hook converts it:
+# - `$ctl/<stem>.fail` fails its conversion;
 # - `$ctl/<stem>.hold` holds its conversion until the file is removed, and `<stem>.held` says it
 #   started;
 # - the lines of `$ctl/<stem>.late` are appended to the transcript once its conversion is done, as
@@ -53,6 +54,7 @@ out=
 for arg; do src=\$out; out=\$arg; done
 stem=\${out##*/}
 stem=\${stem%.funes.jsonl}
+[ ! -e "$ctl/\$stem.fail" ] || exit 1
 if [ -e "$ctl/\$stem.hold" ]; then
     : >"$ctl/\$stem.held"
     while [ -e "$ctl/\$stem.hold" ]; do sleep 0.1; done
@@ -165,6 +167,18 @@ rm "$ctl/r.hold"
 wait "$second"
 [ -f "$spool/q.funes.jsonl" ] ||
     fail "a session written while two runs swept side by side was never converted"
+
+# A conversion that fails leaves the mark where it was, so the next sweep tries the session again,
+# and the run leaves no stamp behind.
+tick
+transcript x.jsonl
+: >"$ctl/x.fail"
+fire
+[ -z "$(find "$scripts" -name 'swept.*')" ] || fail "a run left its stamp behind"
+rm "$ctl/x.fail"
+tick
+fire
+[ -f "$spool/x.funes.jsonl" ] || fail "a session whose conversion failed was never converted again"
 
 # The foreground half, as the hook runs it: the payload on stdin — carrying an assistant message
 # larger than any argument could — handed to a detached worker, and the hook returns at once.
