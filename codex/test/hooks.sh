@@ -37,9 +37,11 @@ tree="$HOME/.codex/sessions/2026/09/24"
 mkdir -p "$tree"
 fixture="$BUNDLE/codex-plugin/plugins/funes/test/session.jsonl"
 
-# The converter, wrapped so a test can act on one rollout as the hook converts it: the lines of
-# `$ctl/<stem>.late` are appended to the rollout once its conversion is done, as a session writes on
-# while the hook reads.
+# The converter, wrapped so a test can act on one rollout as the hook converts it:
+# - `$ctl/<stem>.hold` holds its conversion until the file is removed, and `<stem>.held` says it
+#   started;
+# - the lines of `$ctl/<stem>.late` are appended to the rollout once its conversion is done, as a
+#   session writes on while the hook reads.
 ctl="$tmp/ctl"
 mkdir -p "$ctl"
 plugin="$HOME/.funes/agents/codex/codex-plugin/plugins/funes"
@@ -50,6 +52,10 @@ out=
 for arg; do src=\$out; out=\$arg; done
 stem=\${out##*/}
 stem=\${stem%.funes.jsonl}
+if [ -e "$ctl/\$stem.hold" ]; then
+    : >"$ctl/\$stem.held"
+    while [ -e "$ctl/\$stem.hold" ]; do sleep 0.1; done
+fi
 sh "$plugin/convert.real" "\$@" || exit
 if [ -e "$ctl/\$stem.late" ]; then
     sleep 2
@@ -71,6 +77,19 @@ fire() {
 }
 # Filesystems stamp to the second at worst, and `find -newer` compares stamps.
 tick() { sleep 2; }
+# A worker in the background, its payload naming the rollout `$1`.
+fire_in_background() {
+    printf '{"transcript_path":"%s","session_id":"s"}' "$tree/$1" >"$tmp/payload-$1"
+    sh "$scripts/funes-index.sh" --worker "$tmp/payload-$1" &
+}
+# Wait for a file a background worker creates, as long as a conversion could take.
+await() {
+    for _ in $(seq 1 100); do
+        [ -e "$1" ] && return 0
+        sleep 0.1
+    done
+    fail "$2"
+}
 
 # Two sessions written after the install: the hook fires for one of them only.
 tick
@@ -112,6 +131,30 @@ tick
 fire
 jq -r '.blocks[].text' "$spool/rollout-f.funes.jsonl" | grep -qx late ||
     fail "a turn written while the hook converted its rollout was never converted"
+
+# Two runs side by side: the first holds its sweep, a session is written, and the second stamps its
+# mark before the first publishes. The session is newer than the first run's mark, so the second
+# run's sweep converts it.
+tick
+rollout rollout-p.jsonl
+: >"$ctl/rollout-p.hold"
+fire_in_background rollout-a.jsonl
+first=$!
+await "$ctl/rollout-p.held" "the first run never reached its sweep"
+tick
+rollout rollout-q.jsonl
+rollout rollout-r.jsonl
+: >"$ctl/rollout-r.hold"
+tick
+fire_in_background rollout-r.jsonl
+second=$!
+await "$ctl/rollout-r.held" "the second run never converted the rollout it named"
+rm "$ctl/rollout-p.hold"
+wait "$first"
+rm "$ctl/rollout-r.hold"
+wait "$second"
+[ -f "$spool/rollout-q.funes.jsonl" ] ||
+    fail "a session written while two runs swept side by side was never converted"
 
 # The foreground half, as the hook runs it: the payload on stdin — carrying an assistant message
 # larger than any argument could — handed to a detached worker, and the hook returns at once.

@@ -38,9 +38,11 @@ tree="$CLAUDE_CONFIG_DIR/projects/-Users-me-repo"
 mkdir -p "$tree"
 fixture="$BUNDLE/claude-plugin/funes/test/session.jsonl"
 
-# The converter, wrapped so a test can act on one transcript as the hook converts it: the lines of
-# `$ctl/<stem>.late` are appended to the transcript once its conversion is done, as Claude Code
-# writes a sub-agent's last turns after its SubagentStop fired.
+# The converter, wrapped so a test can act on one transcript as the hook converts it:
+# - `$ctl/<stem>.hold` holds its conversion until the file is removed, and `<stem>.held` says it
+#   started;
+# - the lines of `$ctl/<stem>.late` are appended to the transcript once its conversion is done, as
+#   Claude Code writes a sub-agent's last turns after its SubagentStop fired.
 ctl="$tmp/ctl"
 mkdir -p "$ctl"
 plugin="$HOME/.funes/agents/claude/claude-plugin/funes"
@@ -51,6 +53,10 @@ out=
 for arg; do src=\$out; out=\$arg; done
 stem=\${out##*/}
 stem=\${stem%.funes.jsonl}
+if [ -e "$ctl/\$stem.hold" ]; then
+    : >"$ctl/\$stem.held"
+    while [ -e "$ctl/\$stem.hold" ]; do sleep 0.1; done
+fi
 sh "$plugin/convert.real" "\$@" || exit
 if [ -e "$ctl/\$stem.late" ]; then
     sleep 2
@@ -71,6 +77,19 @@ fire() {
 }
 # Filesystems stamp to the second at worst, and `find -newer` compares stamps.
 tick() { sleep 2; }
+# A worker in the background, its payload naming the transcript `$1`.
+fire_in_background() {
+    printf '{"transcript_path":"%s"}' "$tree/$1" >"$tmp/payload-$1"
+    sh "$scripts/funes-index.sh" --worker "$tmp/payload-$1" &
+}
+# Wait for a file a background worker creates, as long as a conversion could take.
+await() {
+    for _ in $(seq 1 100); do
+        [ -e "$1" ] && return 0
+        sleep 0.1
+    done
+    fail "$2"
+}
 
 # Two sessions written after the install: the hook fires for one of them only.
 tick
@@ -122,6 +141,30 @@ tick
 fire
 jq -r '.blocks[].text' "$spool/f.funes.jsonl" | grep -qx late ||
     fail "a turn written while the hook converted its transcript was never converted"
+
+# Two runs side by side: the first holds its sweep, a session is written, and the second stamps its
+# mark before the first publishes. The session is newer than the first run's mark, so the second
+# run's sweep converts it.
+tick
+transcript p.jsonl
+: >"$ctl/p.hold"
+fire_in_background a.jsonl
+first=$!
+await "$ctl/p.held" "the first run never reached its sweep"
+tick
+transcript q.jsonl
+transcript r.jsonl
+: >"$ctl/r.hold"
+tick
+fire_in_background r.jsonl
+second=$!
+await "$ctl/r.held" "the second run never converted the transcript it named"
+rm "$ctl/p.hold"
+wait "$first"
+rm "$ctl/r.hold"
+wait "$second"
+[ -f "$spool/q.funes.jsonl" ] ||
+    fail "a session written while two runs swept side by side was never converted"
 
 # The foreground half, as the hook runs it: the payload on stdin — carrying an assistant message
 # larger than any argument could — handed to a detached worker, and the hook returns at once.
