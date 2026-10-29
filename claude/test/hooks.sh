@@ -38,12 +38,34 @@ tree="$CLAUDE_CONFIG_DIR/projects/-Users-me-repo"
 mkdir -p "$tree"
 fixture="$BUNDLE/claude-plugin/funes/test/session.jsonl"
 
+# The converter, wrapped so a test can act on one transcript as the hook converts it: the lines of
+# `$ctl/<stem>.late` are appended to the transcript once its conversion is done, as Claude Code
+# writes a sub-agent's last turns after its SubagentStop fired.
+ctl="$tmp/ctl"
+mkdir -p "$ctl"
+plugin="$HOME/.funes/agents/claude/claude-plugin/funes"
+mv "$plugin/convert" "$plugin/convert.real"
+cat >"$plugin/convert" <<WRAP
+#!/bin/sh
+out=
+for arg; do src=\$out; out=\$arg; done
+stem=\${out##*/}
+stem=\${stem%.funes.jsonl}
+sh "$plugin/convert.real" "\$@" || exit
+if [ -e "$ctl/\$stem.late" ]; then
+    sleep 2
+    cat "$ctl/\$stem.late" >>"\$src"
+    rm "$ctl/\$stem.late"
+fi
+WRAP
+chmod +x "$plugin/convert"
+
 # A transcript written now: `cp` would keep the fixture's stamp, and the sweep goes by stamps.
 transcript() { cat "$fixture" >"$tree/$1"; }
 # The worker half, as the foreground half runs it: the payload's file, then `--publish` at a
-# boundary. The worker takes the file with it.
+# boundary. The payload names `a.jsonl` unless told another. The worker takes the file with it.
 fire() {
-    printf '{"transcript_path":"%s"}' "$tree/a.jsonl" >"$tmp/payload"
+    printf '{"transcript_path":"%s"}' "$tree/${2:-a.jsonl}" >"$tmp/payload"
     sh "$scripts/funes-index.sh" --worker "$tmp/payload" "${1:-}"
     [ ! -e "$tmp/payload" ] || fail "the worker left the payload's file"
 }
@@ -89,6 +111,17 @@ printf 'queued 2026-10-01T10:01:00.000Z 5\n' >"$scripts/indexed"
 fire
 [ "$(jq -r .turn_uuid "$spool/queued.funes.jsonl" | paste -s -d ' ' -)" = "u1 a1 a2 a3 u2 a4" ] ||
     fail "a session held without its queued messages took them"
+
+# What Claude Code writes while the hook converts the transcript it named, as a sub-agent's last
+# turns after its SubagentStop fired, is converted by the next sweep.
+tick
+transcript f.jsonl
+printf '%s\n' '{"type":"user","uuid":"late","timestamp":"2026-06-12T22:00:00.000Z","message":{"role":"user","content":"late"}}' >"$ctl/f.late"
+fire "" f.jsonl
+tick
+fire
+jq -r '.blocks[].text' "$spool/f.funes.jsonl" | grep -qx late ||
+    fail "a turn written while the hook converted its transcript was never converted"
 
 # The foreground half, as the hook runs it: the payload on stdin — carrying an assistant message
 # larger than any argument could — handed to a detached worker, and the hook returns at once.

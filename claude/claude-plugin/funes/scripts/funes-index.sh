@@ -68,7 +68,8 @@ agent_version() {
 # SubagentStop funes may not see. What the spool holds cannot say which those are (funes drains it),
 # so the sweep keeps its own mark: the previous sweep's stamp, or, before there is one, the `spool`
 # record `setup add` wrote just before it converted the history. The transcript the payload named
-# was converted already and is skipped.
+# was converted already and is skipped. The next mark is the stamp the worker took before it
+# converted anything.
 convert_stale() {
     jq=$1
     named=$2
@@ -77,8 +78,6 @@ convert_stale() {
     mark="$HERE/swept"
     since=$mark
     [ -e "$since" ] || since="$HERE/spool"
-    # Stamped before the sweep, so a transcript written while it runs is swept again next turn.
-    : >"$mark.new"
     find "$projects" -type f -name '*.jsonl' -newer "$since" 2>/dev/null | while IFS= read -r src; do
         [ "$src" = "$named" ] || convert_one "$jq" "$src"
     done
@@ -139,6 +138,10 @@ worker() {
     src=$("$jq" -r '.transcript_path // empty' "$payload" 2>/dev/null || true)
     named=${agent_src:-$src}
     tag_hub_requests "$(agent_version "$jq" "$named")"
+    # Stamped before anything is converted, the named transcript included: what is written while
+    # this run reads, such as a sub-agent's last turns after its SubagentStop fired, is newer than
+    # the mark it leaves and is swept next turn.
+    : >"$HERE/swept.new"
     convert_one "$jq" "$named"
     convert_stale "$jq" "$named"
 

@@ -37,12 +37,35 @@ tree="$HOME/.codex/sessions/2026/09/24"
 mkdir -p "$tree"
 fixture="$BUNDLE/codex-plugin/plugins/funes/test/session.jsonl"
 
+# The converter, wrapped so a test can act on one rollout as the hook converts it: the lines of
+# `$ctl/<stem>.late` are appended to the rollout once its conversion is done, as a session writes on
+# while the hook reads.
+ctl="$tmp/ctl"
+mkdir -p "$ctl"
+plugin="$HOME/.funes/agents/codex/codex-plugin/plugins/funes"
+mv "$plugin/convert" "$plugin/convert.real"
+cat >"$plugin/convert" <<WRAP
+#!/bin/sh
+out=
+for arg; do src=\$out; out=\$arg; done
+stem=\${out##*/}
+stem=\${stem%.funes.jsonl}
+sh "$plugin/convert.real" "\$@" || exit
+if [ -e "$ctl/\$stem.late" ]; then
+    sleep 2
+    cat "$ctl/\$stem.late" >>"\$src"
+    rm "$ctl/\$stem.late"
+fi
+WRAP
+chmod +x "$plugin/convert"
+
 # A rollout written now: `cp` would keep the fixture's stamp, and the sweep goes by stamps.
 rollout() { cat "$fixture" >"$tree/$1"; }
 # The worker half, as the foreground half runs it: the payload's file, then `--publish` at a
-# boundary. The worker takes the file with it.
+# boundary. The payload names `rollout-a.jsonl` unless told another. The worker takes the file with
+# it.
 fire() {
-    printf '{"transcript_path":"%s","session_id":"s"}' "$tree/rollout-a.jsonl" >"$tmp/payload"
+    printf '{"transcript_path":"%s","session_id":"s"}' "$tree/${2:-rollout-a.jsonl}" >"$tmp/payload"
     sh "$scripts/funes-index.sh" --worker "$tmp/payload" "${1:-}"
     [ ! -e "$tmp/payload" ] || fail "the worker left the payload's file"
 }
@@ -79,6 +102,16 @@ funes; agent/codex; agent_version/0.141.0: index --harness codex
 funes; agent/codex; agent_version/0.141.0: push acme/kb"
 [ "$(cat "$FUNES_TEST_CLI_LOG")" = "$expected" ] || fail "funes was asked:
 $(cat "$FUNES_TEST_CLI_LOG")"
+
+# What a session writes while the hook converts the rollout it named is converted by the next sweep.
+tick
+rollout rollout-f.jsonl
+printf '%s\n' '{"timestamp": "2026-06-23T06:00:00.000Z", "type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "late"}]}}' >"$ctl/rollout-f.late"
+fire "" rollout-f.jsonl
+tick
+fire
+jq -r '.blocks[].text' "$spool/rollout-f.funes.jsonl" | grep -qx late ||
+    fail "a turn written while the hook converted its rollout was never converted"
 
 # The foreground half, as the hook runs it: the payload on stdin — carrying an assistant message
 # larger than any argument could — handed to a detached worker, and the hook returns at once.
