@@ -81,29 +81,59 @@ last_turn() {
     "$PLUGIN_ROOT/funes/convert" "$sample" | tail -n 1 | jq -r '"\(.session_id) \(.ts)"'
 }
 
+# Whether a session the rows `$1` list is missing from the rows `$2`: one the memory held at the
+# last walk and holds no more.
+lost() {
+    awk 'FILENAME == ARGV[1] { held[$1]; next } !($1 in held) { lost = 1 } END { exit !lost }' "$2" "$1"
+}
+
 # Convert the transcripts Claude Code has already written, so recall reaches them before the next
 # turn. Sub-agent transcripts nest under their session's directory and are picked up by the same
-# walk. A transcript whose last turn the memory holds already is left out, so a re-run converts what
-# changed since. What the memory holds stays beside the scripts, where the converter reads the
-# numbering each session was indexed with.
+# walk. What the memory holds stays beside the scripts, where the converter reads the numbering
+# each session was indexed with.
+#
+# The walk shares the mark the hooks' sweeps keep: every transcript older than it was converted as
+# it stands, by the walk that stamped it or by a sweep since. So a re-run reads the transcripts
+# newer than the mark alone, and converts each unless its last turn is one the memory holds. Every
+# transcript is read when there is no mark, or when a session the rows of the last walk list is
+# gone from the memory (one rebuilt since). Like a sweep, the walk stamps its mark before it reads
+# anything, and keeps it only when every conversion succeeded.
 seed() {
     spool=$1
     # Claude Code keeps its transcripts under its config directory, which `CLAUDE_CONFIG_DIR` moves.
     projects="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects"
     [ -d "$projects" ] || return 0
-    work=$(mktemp -d)
     rows="$PLUGIN_ROOT/funes/scripts/indexed"
+    mark="$PLUGIN_ROOT/funes/scripts/converted"
+    # `swept` is the mark of the hooks before this bundle's, which could move past a transcript whose
+    # last turns were never converted. While it is there no mark is trusted, and it goes once a
+    # walk has read every transcript.
+    legacy="$PLUGIN_ROOT/funes/scripts/swept"
+    stamp="$mark.$$"
+    work=$(mktemp -d)
+    trap 'rm -rf "$work" "$stamp" "$rows.new"' EXIT INT TERM
     indexed >"$rows.new"
+    : >"$stamp"
+    if [ -e "$mark" ] && [ ! -e "$legacy" ] && [ -f "$rows" ] && ! lost "$rows" "$rows.new"; then
+        find "$projects" -type f -name '*.jsonl' -newer "$mark"
+    else
+        find "$projects" -type f -name '*.jsonl'
+    fi >"$work/transcripts" || true
     mv -f "$rows.new" "$rows"
     awk 'NF == 3 { print $1, $2 }' "$rows" >"$work/indexed"
-    find "$projects" -type f -name '*.jsonl' | while IFS= read -r src; do
+    while IFS= read -r src; do
         if [ -s "$work/indexed" ] && grep -qxF -- "$(last_turn "$src" "$work")" "$work/indexed"; then
             continue
         fi
         stem=${src##*/}
-        "$PLUGIN_ROOT/funes/convert" --indexed "$rows" "$src" "$spool/${stem%.jsonl}.funes.jsonl" || true
-    done
+        "$PLUGIN_ROOT/funes/convert" --indexed "$rows" "$src" "$spool/${stem%.jsonl}.funes.jsonl" || rm -f "$stamp"
+    done <"$work/transcripts"
+    if [ -e "$stamp" ]; then
+        mv -f "$stamp" "$mark"
+        rm -f "$legacy"
+    fi
     rm -rf "$work"
+    trap - EXIT INT TERM
 }
 
 # The plugin's hooks: a static file per binding, plus the memory in a file the push hook reads. The
@@ -200,7 +230,7 @@ remove() {
     # a re-add cannot rebuild, and leaving it would have funes keep indexing an agent it no longer
     # serves.
     rm -rf "$(spool_dir)" "$LEGACY"
-    rm -rf "$PLUGIN_ROOT/funes/scripts/spool" "$PLUGIN_ROOT/funes/scripts/swept" "$PLUGIN_ROOT/funes/scripts/indexed"
+    rm -rf "$PLUGIN_ROOT/funes/scripts/spool" "$PLUGIN_ROOT/funes/scripts/converted" "$PLUGIN_ROOT/funes/scripts/indexed"
 
     if ! have_claude; then
         echo "\`claude\` isn't on PATH — the plugin files were removed. Once it is, remove the registrations manually:"

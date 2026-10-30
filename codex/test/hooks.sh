@@ -100,7 +100,7 @@ rollout rollout-b.jsonl
 fire
 [ -f "$spool/rollout-a.funes.jsonl" ] || fail "the rollout the payload named was not converted"
 [ -f "$spool/rollout-b.funes.jsonl" ] || fail "the rollout whose hook never fired was not converted"
-[ -f "$scripts/swept" ] || fail "the sweep left no mark"
+[ -f "$scripts/converted" ] || fail "the sweep left no mark"
 
 # A third, written after that run; the second, drained by funes meanwhile, is not re-emitted.
 tick
@@ -164,7 +164,7 @@ tick
 rollout rollout-x.jsonl
 : >"$ctl/rollout-x.fail"
 fire
-[ -z "$(find "$scripts" -name 'swept.*')" ] || fail "a run left its stamp behind"
+[ -z "$(find "$scripts" -name 'converted.*')" ] || fail "a run left its stamp behind"
 rm "$ctl/rollout-x.fail"
 tick
 fire

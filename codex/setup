@@ -82,23 +82,55 @@ last_turn() {
     "$PLUGIN_DIR/convert" "$sample" | tail -n 1 | jq -r '"\(.session_id) \(.ts)"'
 }
 
-# Convert the rollouts Codex has already written, so recall reaches them before the next turn. A
-# rollout whose last turn the memory holds already is left out, so a re-run converts what changed
-# since.
+# Whether a session the rows `$1` list is missing from the rows `$2`: one the memory held at the
+# last walk and holds no more.
+lost() {
+    awk 'FILENAME == ARGV[1] { held[$1]; next } !($1 in held) { lost = 1 } END { exit !lost }' "$2" "$1"
+}
+
+# Convert the rollouts Codex has already written, so recall reaches them before the next turn. What
+# the memory holds stays beside the scripts, for the next walk to tell what it lost.
+#
+# The walk shares the mark the hooks' sweeps keep: every rollout older than it was converted as it
+# stands, by the walk that stamped it or by a sweep since. So a re-run reads the rollouts newer than
+# the mark alone, and converts each unless its last turn is one the memory holds. Every rollout is
+# read when there is no mark, or when a session the rows of the last walk list is gone from the
+# memory (one rebuilt since). Like a sweep, the walk stamps its mark before it reads anything, and
+# keeps it only when every conversion succeeded.
 seed() {
     spool=$1
     sessions="$CODEX_DIR/sessions"
     [ -d "$sessions" ] || return 0
+    rows="$PLUGIN_DIR/scripts/indexed"
+    mark="$PLUGIN_DIR/scripts/converted"
+    # `swept` is the mark of the hooks before this bundle's, which could move past a rollout whose
+    # last turns were never converted. While it is there no mark is trusted, and it goes once a
+    # walk has read every rollout.
+    legacy="$PLUGIN_DIR/scripts/swept"
+    stamp="$mark.$$"
     work=$(mktemp -d)
-    indexed >"$work/indexed"
-    find "$sessions" -name 'rollout-*.jsonl' | while IFS= read -r src; do
-        if [ -s "$work/indexed" ] && grep -qxF -- "$(last_turn "$src" "$work")" "$work/indexed"; then
+    trap 'rm -rf "$work" "$stamp" "$rows.new"' EXIT INT TERM
+    indexed >"$rows.new"
+    : >"$stamp"
+    if [ -e "$mark" ] && [ ! -e "$legacy" ] && [ -f "$rows" ] && ! lost "$rows" "$rows.new"; then
+        find "$sessions" -name 'rollout-*.jsonl' -newer "$mark"
+    else
+        find "$sessions" -name 'rollout-*.jsonl'
+    fi >"$work/rollouts" || true
+    mv -f "$rows.new" "$rows"
+    while IFS= read -r src; do
+        if [ -s "$rows" ] && grep -qxF -- "$(last_turn "$src" "$work")" "$rows"; then
             continue
         fi
         stem=${src##*/}
-        "$PLUGIN_DIR/convert" "$src" "$spool/${stem%.jsonl}.funes.jsonl" || true
-    done
+        "$PLUGIN_DIR/convert" "$src" "$spool/${stem%.jsonl}.funes.jsonl" || rm -f "$stamp"
+    done <"$work/rollouts"
+    if [ -e "$stamp" ]; then
+        mv -f "$stamp" "$mark"
+        rm -f "$legacy"
+    fi
     rm -rf "$work"
+    trap - EXIT INT TERM
 }
 
 # The plugin's hooks: a static file per binding, plus the memory in a file the push hook reads. The
@@ -224,7 +256,7 @@ remove() {
     # re-add cannot rebuild, and leaving it would have funes keep indexing an agent it no longer
     # serves.
     rm -rf "$(spool_dir)"
-    rm -f "$PLUGIN_DIR/scripts/spool" "$PLUGIN_DIR/scripts/swept"
+    rm -f "$PLUGIN_DIR/scripts/spool" "$PLUGIN_DIR/scripts/converted" "$PLUGIN_DIR/scripts/indexed"
     drop_pre_plugin_install
 
     if ! have_codex; then

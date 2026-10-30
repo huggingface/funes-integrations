@@ -39,7 +39,8 @@ codex_dir="$HOME/.codex"
 # A rollout Codex already wrote — the converter's fixture — for the seed to find. 40 records it makes
 # no turn of follow the line that names the session, so the rollout runs longer than the lines the
 # seed reads to find its last turn.
-mkdir -p "$codex_dir/sessions/2026/09/25"
+tree="$codex_dir/sessions/2026/09/25"
+mkdir -p "$tree"
 fixture="$BUNDLE/codex-plugin/plugins/funes/test/session.jsonl"
 {
     head -n 1 "$fixture"
@@ -49,7 +50,7 @@ fixture="$BUNDLE/codex-plugin/plugins/funes/test/session.jsonl"
         i=$((i + 1))
     done
     tail -n +2 "$fixture"
-} >"$codex_dir/sessions/2026/09/25/rollout-seed.jsonl"
+} >"$tree/rollout-seed.jsonl"
 # What an install before the plugin left: hook entries funes wrote in Codex's own file, the scripts
 # they ran, and a skill in Codex's tree and in the shared one an earlier install used.
 mkdir -p "$codex_dir/hooks" "$codex_dir/skills/funes" "$HOME/.agents/skills/funes"
@@ -60,6 +61,12 @@ printf old >"$codex_dir/hooks/funes-index.sh"
 printf old >"$codex_dir/hooks/funes-sync.log"
 printf stale >"$codex_dir/skills/funes/SKILL.md"
 printf stale >"$HOME/.agents/skills/funes/SKILL.md"
+# The mark the hooks of that install kept as `swept`, with the rows its setup left and a mark a
+# hook of this bundle published before the add ran: no mark is trusted until a walk has read every
+# rollout.
+: >"$plugin/scripts/indexed"
+: >"$plugin/scripts/swept"
+: >"$plugin/scripts/converted"
 
 "$setup" add acme/kb >"$tmp/add.out"
 grep -q "installed funes into Codex" "$tmp/add.out" || fail "add did not report: $(cat "$tmp/add.out")"
@@ -75,6 +82,9 @@ if grep -q acme/kb "$hooks"; then fail "the memory is in the hook command"; fi
 [ "$(cat "$plugin/scripts/memory")" = acme/kb ] || fail "no memory file"
 [ "$(cat "$plugin/scripts/spool")" = "$FUNES_HOME/spool/codex" ] || fail "the spool is not recorded"
 [ -f "$FUNES_HOME/spool/codex/rollout-seed.funes.jsonl" ] || fail "the history was not seeded"
+mark="$plugin/scripts/converted"
+[ -f "$mark" ] || fail "the walk left no mark"
+[ ! -e "$plugin/scripts/swept" ] || fail "the mark of the earlier hooks stays"
 # The pre-plugin install is gone: funes wrote every hook in that file, so the file goes with the
 # scripts its entries ran, and both skill copies with it.
 [ ! -e "$codex_dir/hooks.json" ] || fail "the pre-plugin hook entries stay"
@@ -87,8 +97,8 @@ mcp add funes --env HF_HUB_USER_AGENT_ORIGIN=funes; agent/codex -- funes mcp acm
 [ "$(cat "$FUNES_TEST_CLI_LOG")" = "$expected" ] || fail "codex was asked:
 $(cat "$FUNES_TEST_CLI_LOG")"
 
-# A re-run leaves out a rollout whose last turn the local memory holds, and converts one that grew
-# since. With no `funes` to ask, as above, everything was converted.
+# A re-run reads the rollouts written since the mark alone, and converts each unless its last turn
+# is one the local memory holds. With no `funes` to ask, as above, everything was converted.
 cat >"$tmp/bin/funes" <<'FAKE'
 #!/bin/sh
 # `funes sessions` on the local memory, a page per offset: the file under $FUNES_TEST_PAGES named
@@ -126,13 +136,52 @@ EOF
 EOF
 }
 seeded="$FUNES_HOME/spool/codex/rollout-seed.funes.jsonl"
+older="$FUNES_HOME/spool/codex/rollout-older.funes.jsonl"
+# The mark from a walk a while ago: the fixture's rollout was written since, and a copy of it no
+# listing names before.
+age_mark() { touch -t 202601010000 "$mark"; }
+cp "$tree/rollout-seed.jsonl" "$tree/rollout-older.jsonl"
+touch -t 202512310000 "$tree/rollout-older.jsonl"
+touch "$tree/rollout-seed.jsonl"
 rm "$seeded"
 listing "$last"
+age_mark
 "$setup" add acme/kb >/dev/null
+[ ! -e "$older" ] || fail "a rollout older than the mark was read"
 [ ! -e "$seeded" ] || fail "a rollout whose last turn is indexed was converted again"
+# The rows stay beside the scripts, for the next walk.
+[ "$(cat "$plugin/scripts/indexed")" = "other 2026-10-01T09:30:00.000Z
+$id $last" ] || fail "the memory's rows were not kept: $(cat "$plugin/scripts/indexed")"
 listing "$first"
+age_mark
 "$setup" add acme/kb >/dev/null
 [ -f "$seeded" ] || fail "a rollout that grew since its last indexed turn was not converted"
+
+# A session the memory held at the last run and holds no more, as after a rebuild: every rollout is
+# read, the mark notwithstanding.
+forgetful() {
+    cat >"$FUNES_TEST_PAGES/0" <<EOF
+[2026-10-01T09:00:00.000Z → 2026-10-01T09:30:00.000Z] codex /Users/me/other 4 turns other
+  another ask
+---
+1 sessions
+EOF
+}
+forgetful
+age_mark
+"$setup" add acme/kb >/dev/null
+[ -f "$older" ] || fail "a session gone from the memory left the rollouts older than the mark unread"
+
+# A conversion that fails leaves the mark where it was, and no stamp behind.
+printf '{}\n' >"$tree/rollout-unreadable.jsonl"
+chmod 0 "$tree/rollout-unreadable.jsonl"
+touch -t 202601020000 "$tmp/then"
+listing "$last"
+age_mark
+"$setup" add acme/kb >/dev/null 2>&1
+[ ! "$mark" -nt "$tmp/then" ] || fail "a failed conversion moved the mark"
+[ -z "$(find "$plugin/scripts" -name 'converted.*')" ] || fail "the walk left its stamp behind"
+rm -f "$tree/rollout-unreadable.jsonl"
 
 # Remove, with a pre-plugin install that shares Codex's hooks file with a hook of the user's and
 # still publishes to a memory: funes's entries go — the publishing one with them — and the user's
@@ -154,6 +203,8 @@ jq -e '.hooks | has("SessionEnd") | not' "$codex_dir/hooks.json" >/dev/null || f
 [ -f "$codex_dir/hooks/user-hook.sh" ] || fail "the user's script went"
 if grep -q "delete the groups" "$tmp/remove.err"; then fail "asked the user to prune by hand"; fi
 [ ! -e "$FUNES_HOME/spool/codex" ] || fail "the spool stays"
+[ ! -e "$mark" ] || fail "the mark stays"
+[ ! -e "$plugin/scripts/indexed" ] || fail "the memory's rows stay"
 expected="mcp remove funes
 plugin remove funes@huggingface
 plugin marketplace remove huggingface"
