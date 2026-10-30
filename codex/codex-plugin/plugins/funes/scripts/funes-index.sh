@@ -83,17 +83,18 @@ convert_one() {
 
 # The rollouts changed since the last sweep: sessions whose own hook never fired — untrusted, timed
 # out, a host that died mid-turn. What the spool holds cannot say which those are (funes drains it),
-# so the sweep keeps its own mark: the previous sweep's stamp, or, before there is one, the `spool`
-# record `setup add` wrote just before it converted the history. The rollout the payload named was
-# converted already and is skipped. The next mark is the stamp `$3` the worker took before it
-# converted anything, unless a conversion failed and dropped it.
+# so the sweep goes by a mark it shares with the walk `setup add` makes over the history: the stamp
+# of the last of them, or, before there is one, the `spool` record `setup add` wrote just before
+# that walk. The rollout the payload named was converted already and is skipped. The next mark is
+# the stamp `$3` the worker took before it converted anything, unless a conversion failed and
+# dropped it.
 convert_stale() {
     jq=$1
     named=$2
     stamp=$3
     sessions="$CODEX_DIR/sessions"
     [ -d "$sessions" ] || return 0
-    mark="$HERE/swept"
+    mark="$HERE/converted"
     since=$mark
     [ -e "$since" ] || since="$HERE/spool"
     find "$sessions" -type f -name 'rollout-*.jsonl' -newer "$since" 2>/dev/null | while IFS= read -r src; do
@@ -135,7 +136,7 @@ worker() {
     mode=${2:-}
     # The sweep's next mark, as this run stamps it: named after the process, so runs side by side
     # never publish each other's, and dropped on exit unless the sweep published it.
-    stamp="$HERE/swept.$$"
+    stamp="$HERE/converted.$$"
     trap 'rm -f "$payload" "$stamp"' EXIT
     funes=$(find_bin funes || true)
     if [ -z "$funes" ] || [ ! -x "$funes" ]; then

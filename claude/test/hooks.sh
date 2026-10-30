@@ -100,7 +100,7 @@ transcript b.jsonl
 fire
 [ -f "$spool/a.funes.jsonl" ] || fail "the session the payload named was not converted"
 [ -f "$spool/b.funes.jsonl" ] || fail "the session whose hook never fired was not converted"
-[ -f "$scripts/swept" ] || fail "the sweep left no mark"
+[ -f "$scripts/converted" ] || fail "the sweep left no mark"
 
 # A third, written after that run; the second, drained by funes meanwhile, is not re-emitted.
 tick
@@ -174,7 +174,7 @@ tick
 transcript x.jsonl
 : >"$ctl/x.fail"
 fire
-[ -z "$(find "$scripts" -name 'swept.*')" ] || fail "a run left its stamp behind"
+[ -z "$(find "$scripts" -name 'converted.*')" ] || fail "a run left its stamp behind"
 rm "$ctl/x.fail"
 tick
 fire
