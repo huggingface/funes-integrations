@@ -26,13 +26,19 @@ export FUNES_TEST_CLI_LOG="$tmp/cli.log"
 # The origin comes from the scripts, not from whoever ran the test.
 unset HF_HUB_USER_AGENT_ORIGIN
 unset CODEX_HOME
+# Codex names its hooks the directory it keeps for the plugin's data, outside the plugin whose
+# contents it pins when they are trusted: what a run writes goes there.
+export PLUGIN_DATA="$tmp/plugin-data"
+data=$PLUGIN_DATA
 
-# Installed, with the `spool` record `setup add` writes beside the scripts.
+# Installed with a memory bound: the `spool` record and the memory `setup add` writes beside the
+# scripts.
 cp -R "$BUNDLE" "$HOME/.funes/agents/codex"
 scripts="$HOME/.funes/agents/codex/codex-plugin/plugins/funes/scripts"
 spool="$tmp/spool"
 mkdir -p "$spool"
 printf '%s\n' "$spool" >"$scripts/spool"
+printf 'acme/kb\n' >"$scripts/memory"
 tree="$HOME/.codex/sessions/2026/09/24"
 mkdir -p "$tree"
 fixture="$BUNDLE/codex-plugin/plugins/funes/test/session.jsonl"
@@ -93,6 +99,9 @@ await() {
     fail "$2"
 }
 
+# The plugin as installed: every run below must leave it as it is.
+: >"$tmp/installed"
+
 # Two sessions written after the install: the hook fires for one of them only.
 tick
 rollout rollout-a.jsonl
@@ -100,7 +109,7 @@ rollout rollout-b.jsonl
 fire
 [ -f "$spool/rollout-a.funes.jsonl" ] || fail "the rollout the payload named was not converted"
 [ -f "$spool/rollout-b.funes.jsonl" ] || fail "the rollout whose hook never fired was not converted"
-[ -f "$scripts/converted" ] || fail "the sweep left no mark"
+[ -f "$data/converted" ] || fail "the sweep left no mark"
 
 # A third, written after that run; the second, drained by funes meanwhile, is not re-emitted.
 tick
@@ -114,7 +123,6 @@ fire
 # memory recorded beside the scripts.
 tick
 rollout rollout-d.jsonl
-printf 'acme/kb\n' >"$scripts/memory"
 fire --publish
 [ -f "$spool/rollout-d.funes.jsonl" ] || fail "the boundary did not convert before publishing"
 expected="funes; agent/codex; agent_version/0.141.0: index --harness codex
@@ -164,12 +172,20 @@ tick
 rollout rollout-x.jsonl
 : >"$ctl/rollout-x.fail"
 fire
-[ -z "$(find "$scripts" -name 'converted.*')" ] || fail "a run left its stamp behind"
+[ -z "$(find "$data" -name 'converted.*')" ] || fail "a run left its stamp behind"
 rm "$ctl/rollout-x.fail"
 tick
 fire
 [ -f "$spool/rollout-x.funes.jsonl" ] ||
     fail "a rollout whose conversion failed was never converted again"
+
+# A run Codex hands no directory keeps its state where Codex has the plugin's data, which is where
+# the walk `setup add` makes leaves the mark the sweeps share.
+tick
+rollout rollout-g.jsonl
+(unset PLUGIN_DATA; fire "" rollout-g.jsonl) || fail "the run Codex named no directory to failed"
+[ -f "$HOME/.codex/plugins/data/funes-huggingface/converted" ] ||
+    fail "a run Codex named no directory to left its mark elsewhere"
 
 # The foreground half, as the hook runs it: the payload on stdin — carrying an assistant message
 # larger than any argument could — handed to a detached worker, and the hook returns at once.
@@ -185,4 +201,6 @@ for _ in $(seq 1 100); do
     sleep 0.1
 done
 [ -f "$spool/rollout-e.funes.jsonl" ] || fail "the detached worker never converted the rollout the hook named"
+# Trusting the hooks pins a hash of the plugin's contents: no run wrote into it.
+[ -z "$(find "$plugin" -newer "$tmp/installed")" ] || fail "a run wrote into the plugin: $(find "$plugin" -newer "$tmp/installed")"
 echo "codex hooks: ok"

@@ -35,6 +35,7 @@ plugin="$marketplace/plugins/funes"
 hooks="$plugin/hooks.json"
 run_script='sh "${PLUGIN_ROOT}/scripts/funes-index.sh"'
 codex_dir="$HOME/.codex"
+data="$codex_dir/plugins/data/funes-huggingface"
 
 # A rollout Codex already wrote — the converter's fixture — for the seed to find. 40 records it makes
 # no turn of follow the line that names the session, so the rollout runs longer than the lines the
@@ -61,12 +62,10 @@ printf old >"$codex_dir/hooks/funes-index.sh"
 printf old >"$codex_dir/hooks/funes-sync.log"
 printf stale >"$codex_dir/skills/funes/SKILL.md"
 printf stale >"$HOME/.agents/skills/funes/SKILL.md"
-# The mark the hooks of that install kept as `swept`, with the rows its setup left and a mark a
-# hook of this bundle published before the add ran: no mark is trusted until a walk has read every
-# rollout.
-: >"$plugin/scripts/indexed"
-: >"$plugin/scripts/swept"
-: >"$plugin/scripts/converted"
+# A mark a hook of this bundle published before the add ran, with no rows of a walk beside it: no
+# mark is trusted until a walk has read every rollout.
+mkdir -p "$data"
+: >"$data/converted"
 
 "$setup" add acme/kb >"$tmp/add.out"
 grep -q "installed funes into Codex" "$tmp/add.out" || fail "add did not report: $(cat "$tmp/add.out")"
@@ -82,9 +81,11 @@ if grep -q acme/kb "$hooks"; then fail "the memory is in the hook command"; fi
 [ "$(cat "$plugin/scripts/memory")" = acme/kb ] || fail "no memory file"
 [ "$(cat "$plugin/scripts/spool")" = "$FUNES_HOME/spool/codex" ] || fail "the spool is not recorded"
 [ -f "$FUNES_HOME/spool/codex/rollout-seed.funes.jsonl" ] || fail "the history was not seeded"
-mark="$plugin/scripts/converted"
+mark="$data/converted"
 [ -f "$mark" ] || fail "the walk left no mark"
-[ ! -e "$plugin/scripts/swept" ] || fail "the mark of the earlier hooks stays"
+# Trusting the hooks pins a hash of the plugin's contents, so the walk leaves nothing in the plugin
+# beyond what the hooks read.
+[ "$(ls "$plugin/scripts" | tr '\n' ' ')" = "funes-index.sh memory spool " ] || fail "the walk wrote beside the scripts: $(ls "$plugin/scripts")"
 # The pre-plugin install is gone: funes wrote every hook in that file, so the file goes with the
 # scripts its entries ran, and both skill copies with it.
 [ ! -e "$codex_dir/hooks.json" ] || fail "the pre-plugin hook entries stay"
@@ -149,9 +150,9 @@ age_mark
 "$setup" add acme/kb >/dev/null
 [ ! -e "$older" ] || fail "a rollout older than the mark was read"
 [ ! -e "$seeded" ] || fail "a rollout whose last turn is indexed was converted again"
-# The rows stay beside the scripts, for the next walk.
-[ "$(cat "$plugin/scripts/indexed")" = "other 2026-10-01T09:30:00.000Z
-$id $last" ] || fail "the memory's rows were not kept: $(cat "$plugin/scripts/indexed")"
+# The rows stay in the data directory, for the next walk.
+[ "$(cat "$data/indexed")" = "other 2026-10-01T09:30:00.000Z
+$id $last" ] || fail "the memory's rows were not kept: $(cat "$data/indexed")"
 listing "$first"
 age_mark
 "$setup" add acme/kb >/dev/null
@@ -180,7 +181,7 @@ listing "$last"
 age_mark
 "$setup" add acme/kb >/dev/null 2>&1
 [ ! "$mark" -nt "$tmp/then" ] || fail "a failed conversion moved the mark"
-[ -z "$(find "$plugin/scripts" -name 'converted.*')" ] || fail "the walk left its stamp behind"
+[ -z "$(find "$data" -name 'converted.*')" ] || fail "the walk left its stamp behind"
 rm -f "$tree/rollout-unreadable.jsonl"
 
 # Remove, with a pre-plugin install that shares Codex's hooks file with a hook of the user's and
@@ -203,8 +204,7 @@ jq -e '.hooks | has("SessionEnd") | not' "$codex_dir/hooks.json" >/dev/null || f
 [ -f "$codex_dir/hooks/user-hook.sh" ] || fail "the user's script went"
 if grep -q "delete the groups" "$tmp/remove.err"; then fail "asked the user to prune by hand"; fi
 [ ! -e "$FUNES_HOME/spool/codex" ] || fail "the spool stays"
-[ ! -e "$mark" ] || fail "the mark stays"
-[ ! -e "$plugin/scripts/indexed" ] || fail "the memory's rows stay"
+[ ! -e "$data" ] || fail "the plugin's data directory stays"
 expected="mcp remove funes
 plugin remove funes@huggingface
 plugin marketplace remove huggingface"

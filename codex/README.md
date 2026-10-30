@@ -12,9 +12,13 @@ is what lets Codex recognize funes as memory before it loads any of its tools. C
 `Stop` indexes the turn just completed; `SessionEnd` and `SessionStart` publish with a memory
 bound. How the hooks work is in this repository's [README](../README.md#how-the-bundles-automate).
 
-**Codex runs a hook only once you have trusted it.** After installing — and again after any change
-to a funes hook — run `/hooks` in Codex and review them; until then Codex skips them and nothing is
-indexed or published ([Codex docs](https://learn.chatgpt.com/docs/hooks#review-and-trust-hooks)).
+**Codex runs a hook only once you have trusted it.** After installing, run `/hooks` in Codex and
+review them. Until then Codex skips them and nothing is indexed or published
+([Codex docs](https://learn.chatgpt.com/docs/hooks#review-and-trust-hooks)). Trusting them pins a
+hash of the plugin's whole contents, checked before each run, so the review is due again after any
+change to a funes hook or to the memory bound, and never because the hooks ran: what they write
+(their log, the mark of their sweeps) goes in the directory Codex keeps for the plugin's data,
+`~/.codex/plugins/data/funes-huggingface`, outside the plugin.
 
 ## Install
 
@@ -39,8 +43,9 @@ once nothing is left in it. Without `jq` to do that, the file is left as it is a
 funes remove codex
 ```
 
-Removes the plugin, its marketplace registration, the MCP registration, and the skill, and clears
-an install from before the plugin the same way. Your memory and Codex's own rollouts are untouched.
+Removes the plugin, its marketplace registration, the MCP registration, the skill, and the
+plugin's data directory, and clears an install from before the plugin the same way. Your memory and
+Codex's own rollouts are untouched.
 
 ## Requirements
 

@@ -14,12 +14,19 @@
 set -u
 
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-LOG="$HERE/funes-sync.log"
 # Written by `setup add`: the directory funes drains for this agent.
 SPOOL=$(cat "$HERE/spool" 2>/dev/null || true)
 CODEX_DIR="${CODEX_HOME:-$HOME/.codex}"
+# What a run writes (its log, the sweep's mark) goes in the directory Codex keeps for the plugin's
+# data and names to its hooks, never beside this script: trusting the hooks pins a hash of the whole
+# plugin, checked before each run, so a file written into it voids the trust at the first turn.
+# Without Codex to name the directory, it is where Codex has it, which is where the walk `setup add`
+# makes leaves the mark it shares with the sweeps.
+DATA="${PLUGIN_DATA:-$CODEX_DIR/plugins/data/funes-huggingface}"
+LOG="$DATA/funes-sync.log"
 HARNESS=codex
 
+mkdir -p "$DATA"
 log() { printf '%s %s\n' "$(date +%Y-%m-%dT%H:%M:%S%z)" "$*" >>"$LOG"; }
 
 # Resolve a binary by name, falling back to common install dirs — a hook can run with a minimal
@@ -94,7 +101,7 @@ convert_stale() {
     stamp=$3
     sessions="$CODEX_DIR/sessions"
     [ -d "$sessions" ] || return 0
-    mark="$HERE/converted"
+    mark="$DATA/converted"
     since=$mark
     [ -e "$since" ] || since="$HERE/spool"
     find "$sessions" -type f -name 'rollout-*.jsonl' -newer "$since" 2>/dev/null | while IFS= read -r src; do
@@ -136,7 +143,7 @@ worker() {
     mode=${2:-}
     # The sweep's next mark, as this run stamps it: named after the process, so runs side by side
     # never publish each other's, and dropped on exit unless the sweep published it.
-    stamp="$HERE/converted.$$"
+    stamp="$DATA/converted.$$"
     trap 'rm -f "$payload" "$stamp"' EXIT
     funes=$(find_bin funes || true)
     if [ -z "$funes" ] || [ ! -x "$funes" ]; then

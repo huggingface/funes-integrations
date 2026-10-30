@@ -15,6 +15,11 @@ MARKETPLACE="huggingface"
 # default lands in `$HOME/.codex`, which is where that install wrote too.
 CODEX_DIR="${CODEX_HOME:-$HOME/.codex}"
 
+# Where Codex keeps the plugin's data, `<plugin>-<marketplace>` under its home, and names to the
+# hooks as PLUGIN_DATA: what the hooks write, and the mark and rows the walk below shares with their
+# sweeps. It lies outside the plugin, whose whole contents Codex pins when the hooks are trusted.
+DATA_DIR="$CODEX_DIR/plugins/data/funes-huggingface"
+
 FUNES="${FUNES_BIN:-funes}"
 # funes's MCP server names funes and this agent in its Hub requests: hf-hub appends
 # HF_HUB_USER_AGENT_ORIGIN to its User-Agent. The registration is static, so the agent's version,
@@ -89,7 +94,7 @@ lost() {
 }
 
 # Convert the rollouts Codex has already written, so recall reaches them before the next turn. What
-# the memory holds stays beside the scripts, for the next walk to tell what it lost.
+# the memory holds stays in the plugin's data directory, for the next walk to tell what it lost.
 #
 # The walk shares the mark the hooks' sweeps keep: every rollout older than it was converted as it
 # stands, by the walk that stamped it or by a sweep since. So a re-run reads the rollouts newer than
@@ -101,18 +106,15 @@ seed() {
     spool=$1
     sessions="$CODEX_DIR/sessions"
     [ -d "$sessions" ] || return 0
-    rows="$PLUGIN_DIR/scripts/indexed"
-    mark="$PLUGIN_DIR/scripts/converted"
-    # `swept` is the mark of the hooks before this bundle's, which could move past a rollout whose
-    # last turns were never converted. While it is there no mark is trusted, and it goes once a
-    # walk has read every rollout.
-    legacy="$PLUGIN_DIR/scripts/swept"
+    rows="$DATA_DIR/indexed"
+    mark="$DATA_DIR/converted"
     stamp="$mark.$$"
     work=$(mktemp -d)
     trap 'rm -rf "$work" "$stamp" "$rows.new"' EXIT INT TERM
+    mkdir -p "$DATA_DIR"
     indexed >"$rows.new"
     : >"$stamp"
-    if [ -e "$mark" ] && [ ! -e "$legacy" ] && [ -f "$rows" ] && ! lost "$rows" "$rows.new"; then
+    if [ -e "$mark" ] && [ -f "$rows" ] && ! lost "$rows" "$rows.new"; then
         find "$sessions" -name 'rollout-*.jsonl' -newer "$mark"
     else
         find "$sessions" -name 'rollout-*.jsonl'
@@ -125,10 +127,7 @@ seed() {
         stem=${src##*/}
         "$PLUGIN_DIR/convert" "$src" "$spool/${stem%.jsonl}.funes.jsonl" || rm -f "$stamp"
     done <"$work/rollouts"
-    if [ -e "$stamp" ]; then
-        mv -f "$stamp" "$mark"
-        rm -f "$legacy"
-    fi
+    [ ! -e "$stamp" ] || mv -f "$stamp" "$mark"
     rm -rf "$work"
     trap - EXIT INT TERM
 }
@@ -254,9 +253,10 @@ forget() {
 remove() {
     # The spool holds converted copies of Codex's own rollouts, so dropping it loses nothing a
     # re-add cannot rebuild, and leaving it would have funes keep indexing an agent it no longer
-    # serves.
-    rm -rf "$(spool_dir)"
-    rm -f "$PLUGIN_DIR/scripts/spool" "$PLUGIN_DIR/scripts/converted" "$PLUGIN_DIR/scripts/indexed"
+    # serves. The data directory holds the hooks' log and the mark of their sweeps, nothing a re-add
+    # needs.
+    rm -rf "$(spool_dir)" "$DATA_DIR"
+    rm -f "$PLUGIN_DIR/scripts/spool"
     drop_pre_plugin_install
 
     if ! have_codex; then
