@@ -72,7 +72,7 @@ agent_version() {
 # of the last of them, or, before there is one, the `spool` record `setup add` wrote just before
 # that walk. The transcript the payload named was converted already and is skipped. The next mark is
 # the stamp `$3` the worker took before it converted anything, unless a conversion failed and
-# dropped it.
+# dropped it. The journal a workflow keeps beside its sub-agents holds no turn and is left out.
 convert_stale() {
     jq=$1
     named=$2
@@ -82,7 +82,7 @@ convert_stale() {
     mark="$HERE/converted"
     since=$mark
     [ -e "$since" ] || since="$HERE/spool"
-    find "$projects" -type f -name '*.jsonl' -newer "$since" 2>/dev/null | while IFS= read -r src; do
+    find "$projects" -type f -name '*.jsonl' ! -name journal.jsonl -newer "$since" 2>/dev/null | while IFS= read -r src; do
         [ "$src" = "$named" ] || convert_one "$jq" "$src" || rm -f "$stamp"
     done
     [ ! -e "$stamp" ] || mv -f "$stamp" "$mark"

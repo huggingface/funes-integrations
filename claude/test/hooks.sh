@@ -93,13 +93,18 @@ await() {
     fail "$2"
 }
 
-# Two sessions written after the install: the hook fires for one of them only.
+# Two sessions written after the install, and the journal a workflow keeps beside its sub-agents:
+# the hook fires for one of the sessions only.
 tick
 transcript a.jsonl
 transcript b.jsonl
+journal="$tree/a/subagents/workflows/wf_1/journal.jsonl"
+mkdir -p "${journal%/*}"
+printf '%s\n' '{"type":"started","agentId":"agent-1","key":"review"}' >"$journal"
 fire
 [ -f "$spool/a.funes.jsonl" ] || fail "the session the payload named was not converted"
 [ -f "$spool/b.funes.jsonl" ] || fail "the session whose hook never fired was not converted"
+[ ! -e "$spool/journal.funes.jsonl" ] || fail "a workflow's journal was converted"
 [ -f "$scripts/converted" ] || fail "the sweep left no mark"
 
 # A third, written after that run; the second, drained by funes meanwhile, is not re-emitted.

@@ -89,8 +89,9 @@ lost() {
 
 # Convert the transcripts Claude Code has already written, so recall reaches them before the next
 # turn. Sub-agent transcripts nest under their session's directory and are picked up by the same
-# walk. What the memory holds stays beside the scripts, where the converter reads the numbering
-# each session was indexed with.
+# walk. The journal a workflow keeps beside its sub-agents holds no turn and is left out. What the
+# memory holds stays beside the scripts, where the converter reads the numbering each session was
+# indexed with.
 #
 # The walk shares the mark the hooks' sweeps keep: every transcript older than it was converted as
 # it stands, by the walk that stamped it or by a sweep since. So a re-run reads the transcripts
@@ -115,9 +116,9 @@ seed() {
     indexed >"$rows.new"
     : >"$stamp"
     if [ -e "$mark" ] && [ ! -e "$legacy" ] && [ -f "$rows" ] && ! lost "$rows" "$rows.new"; then
-        find "$projects" -type f -name '*.jsonl' -newer "$mark"
+        find "$projects" -type f -name '*.jsonl' ! -name journal.jsonl -newer "$mark"
     else
-        find "$projects" -type f -name '*.jsonl'
+        find "$projects" -type f -name '*.jsonl' ! -name journal.jsonl
     fi >"$work/transcripts" || true
     mv -f "$rows.new" "$rows"
     awk 'NF == 3 { print $1, $2 }' "$rows" >"$work/indexed"

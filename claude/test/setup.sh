@@ -38,6 +38,11 @@ mkdir -p "$tree"
     done
     cat "$BUNDLE/claude-plugin/funes/test/session.jsonl"
 } >"$tree/session.jsonl"
+# The journal a workflow keeps beside its sub-agents: records the converter makes no turn of.
+journal="$tree/session/subagents/workflows/wf_1/journal.jsonl"
+mkdir -p "${journal%/*}"
+printf '%s\n' '{"type":"started","agentId":"agent-1","key":"review"}' \
+    '{"type":"result","agentId":"agent-1","key":"review","result":"ok"}' >"$journal"
 
 cp -R "$BUNDLE" "$HOME/.funes/agents/claude"
 setup="$HOME/.funes/agents/claude/setup"
@@ -68,6 +73,7 @@ if grep -q acme/kb "$hooks"; then fail "the memory is in the hook command"; fi
 [ "$(cat "$plugin/funes/scripts/memory")" = acme/kb ] || fail "no memory file"
 [ "$(cat "$plugin/funes/scripts/spool")" = "$FUNES_HOME/spool/claude" ] || fail "the spool is not recorded"
 [ -f "$FUNES_HOME/spool/claude/session.funes.jsonl" ] || fail "the history was not seeded"
+[ ! -e "$FUNES_HOME/spool/claude/journal.funes.jsonl" ] || fail "a workflow's journal was converted"
 mark="$plugin/funes/scripts/converted"
 [ -f "$mark" ] || fail "the walk left no mark"
 [ ! -e "$plugin/funes/scripts/swept" ] || fail "the mark of the earlier hooks stays"
@@ -130,6 +136,7 @@ age_mark
 "$setup" add acme/kb >/dev/null
 [ ! -e "$older" ] || fail "a transcript older than the mark was read"
 [ ! -e "$seeded" ] || fail "a transcript whose last turn is indexed was converted again"
+[ ! -e "$FUNES_HOME/spool/claude/journal.funes.jsonl" ] || fail "a workflow's journal newer than the mark was converted"
 # The rows stay beside the scripts, for the converter.
 [ "$(cat "$plugin/funes/scripts/indexed")" = "other 2026-10-01T09:30:00.000Z 4
 $id $last 5" ] || fail "the memory's rows were not kept: $(cat "$plugin/funes/scripts/indexed")"
