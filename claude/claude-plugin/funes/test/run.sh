@@ -1,8 +1,9 @@
 #!/bin/sh
 # The converter's acceptance test: a real Claude Code transcript, trimmed and secret-scanned, and
 # the turns file it must produce. `expected.funes.jsonl` is what funes's own Claude parser emitted
-# while it had one, so a change here that moves a chunk id re-keys sessions users already hold. Its
-# last two turns are the exception: messages typed while Claude was working, which that parser
+# while it had one, so a change here that moves a chunk id re-keys sessions users already hold. It
+# differs from that output in two ways that move no id: the tool output says `tool` where the parser
+# said `user`, and the last two turns are messages typed while Claude was working, which the parser
 # dropped.
 #
 #   sh <plugin>/test/run.sh
@@ -47,4 +48,32 @@ check "queued 2026-10-01T10:00:10.000Z 4" "$without"
 # No stamp to compare (funes before 1.9.0), or one neither count matches.
 check "queued" "$without"
 check "queued 2026-10-01T10:00:00.000Z 2" "$without"
+
+# Who wrote each line of `attribution.jsonl`, one line of every kind Claude Code writes, each named
+# by its uuid.
+cat >"$out/want" <<'EOF'
+prompt user text
+ask assistant tool_use:AskUserQuestion
+answer user text
+ask-again assistant tool_use:AskUserQuestion
+dismissed tool tool_result:AskUserQuestion
+call assistant tool_use:Bash
+output tool tool_result:Bash
+interrupt system text
+nudge system text
+notification system text
+peer system text
+recap system text
+placeholder system text
+api-error system text
+reply assistant text
+old-prompt user text
+EOF
+"$HERE/../convert" "$HERE/attribution.jsonl" \
+    | jq -r '[.turn_uuid, .role, (.blocks | map(.block_type + (if .tool_name then ":" + .tool_name else "" end)) | join(","))] | join(" ")' \
+    >"$out/got"
+if ! diff -u "$out/want" "$out/got"; then
+    echo "claude converter: a turn has the wrong role or block type, see the diff above" >&2
+    exit 1
+fi
 echo "claude converter: ok"
