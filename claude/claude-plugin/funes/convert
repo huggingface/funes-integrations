@@ -10,6 +10,9 @@
 # The session id is the transcript's file stem and the harness facet is the bundle id. `<rows>` is
 # what the memory holds, as `<session id> <stamp of its last indexed turn> <turn count>` lines, or
 # the session id alone: a session listed there keeps the numbering it was indexed with.
+#
+# A turn's role says who wrote it: `user` the human (an answered question box included), `assistant`
+# the model, `tool` the output of a call, and `system` Claude Code itself.
 set -eu
 
 JQ=${FUNES_JQ:-jq}
@@ -69,16 +72,36 @@ def blocks_of:
 
 def obj: if type == "object" then . else null end;
 
+# A user line Claude Code wrote itself: a nudge, a notification, a skill body, the compact recap, a
+# message from another session, or the marker an interruption leaves. It is `system`, so funes never
+# takes it for the words of the human. Claude Code flags each one but the marker, which only its
+# text tells apart.
+def harness_written:
+  def marker: str | startswith("[Request interrupted");
+  .isMeta == true or .isCompactSummary == true
+  or ((.origin | obj | .kind | str) as $k | $k != "" and $k != "human")
+  or (.message | obj | .content
+      | if type == "string" then marker
+        elif type == "array" then length > 0 and all(.[]; (obj | .type) == "text" and (.text | marker))
+        else false end);
+
+# A reply Claude Code wrote in place of the model, such as an API error or "No response requested.".
+def synthetic: .isApiErrorMessage == true or (.message | obj | .model) == "<synthetic>";
+
 # A line as {role, content}: a user or assistant message, or a message the user typed while Claude
 # was working, marked `queued`. Claude Code writes that one as a queued_command attachment in prompt
 # mode rather than a user line. A message from another session is queued the same way, so the
 # origin must be the human one, or absent (older versions write none). Its `rendered` field is the
-# system reminder that wraps the text, so only `prompt` is what they typed.
+# system reminder that wraps the text, so only `prompt` is what they typed. A line marked `answered`
+# is the result of a question box the human answered: Claude Code records the answers beside it.
 def message:
   (.type | str) as $rt
   | if $rt == "user" or $rt == "assistant" then
       (.message | obj) as $msg
-      | {role: (($msg.role | select(type == "string")) // $rt), content: $msg.content}
+      | {role: (if ($rt == "user" and harness_written) or ($rt == "assistant" and synthetic) then "system"
+                else ($msg.role | select(type == "string")) // $rt end),
+         content: $msg.content,
+         answered: ((.toolUseResult | obj | .answers | obj // {}) | length > 0)}
     elif $rt == "attachment" then
       (.attachment | obj) as $a
       | select(($a.type | str) == "queued_command" and ($a.commandMode | str) == "prompt"
@@ -88,9 +111,18 @@ def message:
 
 [ $doc | split("\n")[] | fromjson? | select(type == "object") ] as $recs
 | (first($recs[] | .cwd | select(type == "string")) // null) as $cwd
+# An answered question box holds the decision of the human, though Claude Code returns it as the
+# tool_result of the AskUserQuestion call: it becomes their text. Any other line holding tool output
+# is `tool`.
+| [ $recs[] | .message | obj | .content | arrays | .[] | obj
+    | select(.type == "tool_use" and .name == "AskUserQuestion") | .id | strings ] as $asked
 | [ $recs[]
     | message as $m
-    | ($m.content | blocks_of) as $blocks
+    | ($m.content | blocks_of
+       | if $m.answered then map(
+           if .block_type == "tool_result" and (.tool_use_id | IN($asked[]))
+           then {block_type: "text", text} else . end)
+         else . end) as $blocks
     | select(($blocks | length) > 0)
     | {format: 1, session_id: $sid}
       + (if $cwd != null then {cwd: $cwd} else {} end)
@@ -98,7 +130,8 @@ def message:
       + (if (.parentUuid | type) == "string" then {parent_uuid: .parentUuid} else {} end)
       + {seq: 0,
          ts: (.timestamp | str),
-         role: $m.role,
+         role: (if $m.role == "user" and any($blocks[]; .block_type == "tool_result") then "tool"
+                else $m.role end),
          blocks: $blocks,
          harness: $harness}
       + (if $m.queued then {queued: true} else {} end)
