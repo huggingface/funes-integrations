@@ -39,6 +39,14 @@ def clean: with_entries(select(.value != null));
 
 def block(t; x): {block_type: t, text: x, tool_name: null, tool_use_id: null};
 
+# A user message Codex wrote itself, to hand the model what a hook asked: each piece of its content
+# is one `hook_prompt` element. It is `system`, so funes never takes it for the words of the human.
+def hook_prompt:
+    .role == "user" and (.content | type) == "array" and (.content | length) > 0
+    and all(.content[];
+            type == "object" and .type == "input_text" and (.text | type) == "string"
+            and (.text | test("\\A\\s*<hook_prompt hook_run_id=\"[^\"]*\">[\\s\\S]*</hook_prompt>\\s*\\z")));
+
 # --- payload -> blocks -----------------------------------------------------
 def message_blocks:
     .content as $c
@@ -96,7 +104,8 @@ def tool_result_blocks:
     | (.timestamp | str_or_empty) as $ts
     | .payload
     | (.type | str_or_empty) as $pt
-    | (if $pt == "message" then {role: (.role | str_or_empty), blocks: message_blocks}
+    | (if $pt == "message" then
+           {role: (if hook_prompt then "system" else (.role | str_or_empty) end), blocks: message_blocks}
        elif $pt == "reasoning" then {role: "assistant", blocks: reasoning_blocks}
        elif $pt == "function_call" or $pt == "custom_tool_call" then
            {role: "assistant", blocks: tool_use_blocks}

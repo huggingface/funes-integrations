@@ -19,4 +19,22 @@ if [ "$out/got.funes.jsonl" -nt "$HERE/session.jsonl" ] || [ "$out/got.funes.jso
     echo "codex converter: the turns file does not carry the rollout's own time" >&2
     exit 1
 fi
+
+# Who wrote each turn of `attribution.jsonl`. A prompt Codex made of what a hook asked is `system`,
+# whether one hook asked or two. What the human typed stays theirs when it quotes such a prompt, or
+# holds one beside their own words.
+cat >"$out/want" <<'EOF'
+0 user
+1 assistant
+2 system
+3 assistant
+4 system
+5 user
+6 user
+EOF
+"$HERE/../convert" "$HERE/attribution.jsonl" | jq -r '"\(.seq) \(.role)"' >"$out/got"
+if ! diff -u "$out/want" "$out/got"; then
+    echo "codex converter: a turn has the wrong role, see the diff above" >&2
+    exit 1
+fi
 echo "codex converter: ok"
