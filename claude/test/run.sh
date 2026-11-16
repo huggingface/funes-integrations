@@ -9,3 +9,4 @@ HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 sh "$HERE/../claude-plugin/funes/test/run.sh"
 sh "$HERE/setup.sh"
 sh "$HERE/hooks.sh"
+sh "$HERE/question.sh"

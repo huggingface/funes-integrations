@@ -66,6 +66,9 @@ grep -q "name: funes" "$plugin/funes/skills/funes/SKILL.md" || fail "no skill in
 # The plugin's own script per turn and for a sub-agent; the same script publishes at both boundaries.
 [ "$(jq -r '.hooks.Stop[0].hooks[0].command' "$hooks")" = "$run_script" ] || fail "Stop: $(cat "$hooks")"
 [ "$(jq -r '.hooks.SubagentStop[0].hooks[0].command' "$hooks")" = "$run_script" ] || fail "SubagentStop: $(cat "$hooks")"
+# The end-of-turn question rides on Stop beside it, for the main agent alone.
+[ "$(jq -r '.hooks.Stop[0].hooks[1].command' "$hooks")" = 'sh "${CLAUDE_PLUGIN_ROOT}/scripts/funes-question.sh"' ] || fail "Stop: $(cat "$hooks")"
+jq -e '.hooks.SubagentStop[0].hooks | length == 1' "$hooks" >/dev/null || fail "SubagentStop: $(cat "$hooks")"
 [ "$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$hooks")" = "$run_script --publish" ] || fail "SessionStart: $(cat "$hooks")"
 [ "$(jq -r '.hooks.SessionEnd[0].hooks[0].command' "$hooks")" = "$run_script --publish" ] || fail "SessionEnd: $(cat "$hooks")"
 # The memory rides in a file, not the hook command, so the hooks stay a static file.

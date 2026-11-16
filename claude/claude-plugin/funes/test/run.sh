@@ -50,7 +50,8 @@ check "queued" "$without"
 check "queued 2026-10-01T10:00:00.000Z 2" "$without"
 
 # Who wrote each line of `attribution.jsonl`, one line of every kind Claude Code writes, each named
-# by its uuid.
+# by its uuid. The `question` line is what a Stop hook added for the model. It is an attachment,
+# and makes no turn.
 cat >"$out/want" <<'EOF'
 prompt user text
 ask assistant tool_use:AskUserQuestion

@@ -75,6 +75,8 @@ grep -q "installed funes into Codex" "$tmp/add.out" || fail "add did not report:
 grep -q "name: funes" "$plugin/skills/funes/SKILL.md" || fail "no skill in the plugin"
 [ -x "$plugin/scripts/funes-index.sh" ] || fail "the hook script is not executable"
 [ "$(jq -r '.hooks.Stop[0].hooks[0].command' "$hooks")" = "$run_script" ] || fail "Stop: $(cat "$hooks")"
+# The end-of-turn question rides on Stop beside it.
+[ "$(jq -r '.hooks.Stop[0].hooks[1].command' "$hooks")" = 'sh "${PLUGIN_ROOT}/scripts/funes-question.sh"' ] || fail "Stop: $(cat "$hooks")"
 [ "$(jq -r '.hooks.SessionStart[0].hooks[0].command' "$hooks")" = "$run_script --publish" ] || fail "SessionStart: $(cat "$hooks")"
 [ "$(jq -r '.hooks.SessionEnd[0].hooks[0].command' "$hooks")" = "$run_script --publish" ] || fail "SessionEnd: $(cat "$hooks")"
 if grep -q acme/kb "$hooks"; then fail "the memory is in the hook command"; fi
@@ -85,7 +87,7 @@ mark="$data/converted"
 [ -f "$mark" ] || fail "the walk left no mark"
 # Trusting the hooks pins a hash of the plugin's contents, so the walk leaves nothing in the plugin
 # beyond what the hooks read.
-[ "$(ls "$plugin/scripts" | tr '\n' ' ')" = "funes-index.sh memory spool " ] || fail "the walk wrote beside the scripts: $(ls "$plugin/scripts")"
+[ "$(ls "$plugin/scripts" | tr '\n' ' ')" = "funes-index.sh funes-question.sh memory spool " ] || fail "the walk wrote beside the scripts: $(ls "$plugin/scripts")"
 # The pre-plugin install is gone: funes wrote every hook in that file, so the file goes with the
 # scripts its entries ran, and both skill copies with it.
 [ ! -e "$codex_dir/hooks.json" ] || fail "the pre-plugin hook entries stay"
