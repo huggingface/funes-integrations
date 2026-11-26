@@ -41,6 +41,27 @@ beside the scripts, so every hooks file is static.
 | `hermes` | `post_llm_call` | `on_session_finalize`, `on_session_start` |
 | `pi` | `turn_end` | `session_shutdown`, and `session_start` when the process is fresh |
 
+### Under another funes home
+
+A bundle is installed once on a host, and serves the funes home its agent is started under. With
+`FUNES_HOME` in the agent's environment, a session's turns go to that home's spool, which is where
+the `funes` the hook runs looks for them, and so into that home's memory. The memory `setup add`
+recorded is the binding of the home it last ran under: a session under any other home pushes
+nothing, `pi` aside, where `FUNES_MEMORY` names a memory for the run.
+
+That keeps two memories on one host apart, such as one it publishes and one that never leaves the
+box, only when each home has its agent's own store as well, moved the way the agent moves it:
+`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, a hermes profile, `PI_CODING_AGENT_DIR`. A bundle cannot tell
+which home a session in the store ran under. The seed at install converts the history of the store
+it finds, and each sweep every session written there since the last one, so with one store for two
+homes a hook of either carries the other's sessions into its own memory, and on to the memory it
+publishes to.
+
+An agent keeps its plugins and MCP servers with its store, so `funes add <id>` runs once per home,
+with that home and its store in the environment, and the home that publishes goes last: the
+records beside the scripts are those of the last run, as they are after a `funes bind` or a
+`funes update`. Each store then reads its own home's memory.
+
 At install, `setup add` converts the sessions the agent has already written. The `claude` and
 `codex` setups share a mark with their hooks' sweeps, so a re-add reads only the sessions written
 since the last of either, and leaves out each one whose last turn the local memory holds, as its

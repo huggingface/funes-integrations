@@ -35,7 +35,9 @@ os.environ["PATH"] = shims + os.pathsep + os.environ.get("PATH", "")
 # script that records what it was launched for.
 dest = os.path.join(tmp, "funes")
 shutil.copytree(PLUGIN, dest, ignore=shutil.ignore_patterns("test", "__pycache__"))
-spool = os.path.join(tmp, "spool")
+# The home funes installed it for, which is the one hermes runs under until a test says otherwise.
+os.environ["FUNES_HOME"] = os.path.join(tmp, "home")
+spool = os.path.join(tmp, "home", "spool", "hermes")
 os.makedirs(spool)
 db = os.path.join(tmp, "state.db")
 shutil.copy(os.path.join(PLUGIN, "test", "state.db"), db)
@@ -96,6 +98,25 @@ while True:
         break
     if time.time() > deadline:
         fail(f"the index script was launched with {got!r}, expected {expected!r}")
+    time.sleep(0.05)
+
+# A hermes started under another funes home is that home's: its turn goes to the spool the `funes`
+# it runs drains.
+os.remove(os.path.join(spool, "20260101_000000_fixture.funes.jsonl"))
+os.environ["FUNES_HOME"] = os.path.join(tmp, "other")
+for fn in hooks["post_llm_call"]:
+    fn(session_id="20260101_000000_fixture")
+if not os.path.isfile(os.path.join(tmp, "other", "spool", "hermes", "20260101_000000_fixture.funes.jsonl")):
+    fail("a turn under another home was not converted into its spool")
+if os.listdir(spool):
+    fail("a turn under another home reached the installed home's spool")
+# The index that turn spawned writes its line before the scratch directory goes.
+while True:
+    with open(log, encoding="utf-8") as f:
+        if len(f.readlines()) == 3:
+            break
+    if time.time() > deadline:
+        fail("the turn under another home spawned no index")
     time.sleep(0.05)
 shutil.rmtree(tmp)
 print("hermes hooks: ok")

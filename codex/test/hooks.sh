@@ -15,6 +15,8 @@ fail() {
 }
 
 export HOME="$tmp/home"
+# The hook serves the funes home in its environment: the fake one, not the developer's.
+unset FUNES_HOME
 mkdir -p "$HOME/.funes/agents" "$tmp/bin"
 cat >"$tmp/bin/funes" <<'FAKE'
 #!/bin/sh
@@ -37,7 +39,7 @@ data=$PLUGIN_DATA
 # scripts.
 cp -R "$BUNDLE" "$HOME/.funes/agents/codex"
 scripts="$HOME/.funes/agents/codex/codex-plugin/plugins/funes/scripts"
-spool="$tmp/spool"
+spool="$HOME/.funes/spool/codex"
 mkdir -p "$spool"
 printf '%s\n' "$spool" >"$scripts/spool"
 printf 'acme/kb\n' >"$scripts/memory"
@@ -238,6 +240,18 @@ rollout rollout-g.jsonl
 (unset PLUGIN_DATA; fire "" rollout-g.jsonl) || fail "the run Codex named no directory to failed"
 [ -f "$HOME/.codex/plugins/data/funes-huggingface/converted" ] ||
     fail "a run Codex named no directory to left its mark elsewhere"
+
+# A session started under another funes home is that home's: converted into the spool the `funes` it
+# runs drains, and never pushed to the memory recorded for the home `setup add` ran under.
+tick
+rollout rollout-h.jsonl
+: >"$FUNES_TEST_CLI_LOG"
+(export FUNES_HOME="$tmp/other" && fire --publish rollout-h.jsonl) || exit 1
+[ -f "$tmp/other/spool/codex/rollout-h.funes.jsonl" ] ||
+    fail "a session under another home was not converted into its spool"
+[ ! -e "$spool/rollout-h.funes.jsonl" ] || fail "a session under another home reached the installed home's spool"
+[ "$(cat "$FUNES_TEST_CLI_LOG")" = "$i" ] || fail "funes was asked, under another home:
+$(cat "$FUNES_TEST_CLI_LOG")"
 
 # The foreground half, as the hook runs it: the payload on stdin — carrying an assistant message
 # larger than any argument could — handed to a detached worker, and the hook returns at once.

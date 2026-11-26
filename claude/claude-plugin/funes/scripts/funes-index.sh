@@ -16,9 +16,18 @@ set -u
 
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 LOG="$HERE/funes-sync.log"
-# Written by `setup add`: the directory funes drains for this agent.
-SPOOL=$(cat "$HERE/spool" 2>/dev/null || true)
 HARNESS=claude
+# Written by `setup add`: the directory funes drains for this agent, in the home it installed for.
+RECORDED=$(cat "$HERE/spool" 2>/dev/null || true)
+# The spool this run fills is the one the `funes` it runs drains: the home Claude Code was started
+# under, as funes resolves it, a trailing slash on `$HOME` dropped as funes drops it. A session
+# started under another `FUNES_HOME` is that home's. That keeps two memories on one host apart only
+# with a store of Claude Code's own per home: the sweep converts what the store holds, whichever
+# home each session ran under.
+# shortcut: the sweep's mark is shared by every home, so even with a store per home a session whose
+# own hook never fired can be missed while two homes run side by side; give each home its own mark
+# if that bites.
+SPOOL=${RECORDED:+${FUNES_HOME:-${HOME%/}/.funes}/spool/$HARNESS}
 # How old the last push gets, in minutes, before a turn pushes too. A push compacts the remote once
 # enough rows sit unindexed there, so many small pushes compact it more often than a few large ones.
 PUSH_EVERY=60
@@ -92,8 +101,12 @@ convert_stale() {
     [ ! -e "$stamp" ] || mv -f "$stamp" "$mark"
 }
 
-# The memory `setup add` recorded beside this script, empty when it was handed none.
-bound_memory() { head -n 1 "$HERE/memory" 2>/dev/null | tr -d '[:space:]'; }
+# The memory `setup add` recorded beside this script, empty when it was handed none. It is the
+# binding of the home `setup add` ran under: a run under another home has none, and pushes nothing.
+bound_memory() {
+    [ "$SPOOL" = "$RECORDED" ] || return 0
+    head -n 1 "$HERE/memory" 2>/dev/null | tr -d '[:space:]'
+}
 
 # Push what the local memory holds to the memory `$1`. A first push to a memory this index shares
 # no chunks with is refused off a terminal. funes does it once, interactively, when it binds the
@@ -154,6 +167,8 @@ worker() {
         log "convert ABORT: no spool recorded; re-run \`funes add claude\`."
         return
     fi
+    # `setup add` made the spool of its own home; funes drains only one that exists.
+    mkdir -p "$SPOOL"
 
     # SubagentStop carries the sub-agent's own transcript in its own field; the session's is still
     # `transcript_path`. A reported bug fires the event for internal calls whose file never exists,

@@ -38,12 +38,26 @@ def _beside(name):
         return None
 
 
+def _spool():
+    """The spool this run fills, which is the one the `funes` it runs drains: the home hermes was
+    started under, as funes resolves it. A hermes started under another FUNES_HOME is that home's,
+    which keeps two memories on one host apart only with a hermes store per home: the sweep converts
+    what the store holds, whichever home each session ran under. None when `funes add hermes`
+    recorded no spool.
+    shortcut: the sweep's mark is shared by every home, so even with a store per home a session a
+    dead hermes never converted can be missed while two homes run side by side; give each home its
+    own mark if that bites."""
+    if not _beside("spool"):
+        return None
+    return os.path.join(os.environ.get("FUNES_HOME") or os.path.expanduser("~/.funes"), "spool", "hermes")
+
+
 def _convert(session_id):
     """The session that just spoke, as a turns file in the spool; returns its id. hermes names it
     when its hook carries one; otherwise it is the session whose message landed last, which is the
     same session. A hook must never raise into hermes, so a store this cannot read costs the turn's
     capture and nothing else."""
-    spool, db = _beside("spool"), _beside("state-db")
+    spool, db = _spool(), _beside("state-db")
     if not spool or not db:
         return None
     try:
@@ -60,7 +74,7 @@ def _convert_stale(named):
     the sweep keeps its own mark: the previous sweep's stamp, or, before there is one, the `spool`
     record `funes add hermes` wrote just before it converted the history. The session that just
     spoke was converted already and is skipped."""
-    spool, db = _beside("spool"), _beside("state-db")
+    spool, db = _spool(), _beside("state-db")
     if not spool or not db:
         return
     mark = os.path.join(HERE, "swept")

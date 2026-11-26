@@ -4,11 +4,12 @@
 # done in place — nothing here waits on a hook.
 #
 #   funes-index.sh [MEMORY]            per turn: index and, if that went through, push to MEMORY
-#                                      (or to the memory `setup add` recorded beside this script)
 #                                      once the last push is `PUSH_EVERY` minutes old
 #   funes-index.sh --publish [MEMORY]  at a boundary: index, waiting out a per-turn run that still
-#                                      holds the memory lock, then push to MEMORY — or to the memory
-#                                      `setup add` recorded beside this script
+#                                      holds the memory lock, then push to MEMORY
+#
+# MEMORY is the extension's to resolve, for the funes home pi runs under: with none, nothing is
+# pushed.
 #
 # No locking: `funes` serializes local-memory writes itself. A per-turn run that loses the lock
 # exits non-zero, is logged, and the next turn re-sweeps the same content — indexing is idempotent.
@@ -46,13 +47,9 @@ index() {
     fi
 }
 
-# The memory `$1`, else the one `setup add` recorded beside this script, else nothing.
+# The memory `$1`, else nothing.
 bound_memory() {
-    if [ -n "$1" ]; then
-        printf '%s\n' "$1"
-    else
-        head -n 1 "$HERE/memory" 2>/dev/null | tr -d '[:space:]'
-    fi
+    [ -z "$1" ] || printf '%s\n' "$1"
 }
 
 # Push what the local memory holds to the memory `$1`. A first push to a memory this index shares

@@ -24,11 +24,13 @@
 // The memory this extension recalls from — and publishes to — is resolved once, in order:
 //   1. FUNES_MEMORY in the environment (a per-run override, set by whatever host)
 //   2. the memory `setup add` was handed, saved in a `memory` file next to this
-//      extension (absent = the local memory)
+//      extension (absent = the local memory) — the binding of the funes home `setup`
+//      ran under, so a pi started under another FUNES_HOME reads that home's own memory
 // The result is forwarded as the `funes mcp <memory>` positional; empty forwards a
 // bare `funes mcp` (the local memory).
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { existsSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join, sep } from "node:path";
 
@@ -46,15 +48,23 @@ function bound(name: string): string {
   }
 }
 
-// The directory funes drains for this bundle, resolved at install: funes hands `setup` its home and
-// this agent's id, neither of which reaches a running extension.
-const SPOOL = bound("spool");
+// The directory funes drains for this bundle, as `setup` recorded it for the home it installed for.
+const RECORDED = bound("spool");
+// The spool this pi fills is the one the `funes` it runs drains: the home pi was started under, as
+// funes resolves it. A pi started under another FUNES_HOME is that home's, which keeps two memories
+// on one host apart only with a pi store per home: the sweep converts what the store holds,
+// whichever home each session ran under. A run from a checkout has no record, and no spool.
+// shortcut: the sweep's mark is shared by every home, so even with a store per home a session a
+// dead pi never converted can be missed while two homes run side by side; give each home its own
+// mark if that bites.
+// Spelled as `setup` spells its record, so the two compare equal under the home it ran for.
+const SPOOL = RECORDED && `${process.env.FUNES_HOME || join(homedir(), ".funes")}/spool/pi`;
 // Where pi kept its sessions when `setup` ran: one directory per project under it.
 const SESSIONS = bound("sessions");
 // The sessions root `setup` could not convert for want of a JS runtime, left for pi's own.
 const SEED_PENDING = join(HERE, "seed-pending");
 
-const memory = (process.env.FUNES_MEMORY || bound("memory")).trim();
+const memory = (process.env.FUNES_MEMORY || (SPOOL === RECORDED ? bound("memory") : "")).trim();
 const FUNES_ARGS = memory ? ["mcp", memory] : ["mcp"];
 // funes, pi and pi's version, as funes's Hub requests name them: hf-hub appends
 // HF_HUB_USER_AGENT_ORIGIN to its User-Agent. An origin already set is kept in front. The version is
@@ -211,14 +221,16 @@ class FunesMcp {
 
 const funes = new FunesMcp();
 
-// The automation beside this extension: the index per turn, the publish at a boundary. It serves
-// the spool `funes add pi` recorded; a run from a checkout has none, and spawns nothing.
+// The automation beside this extension: the index per turn, the publish at a boundary. A run from
+// a checkout has no spool, and spawns nothing.
 const INDEX_SH = join(HERE, "scripts", "funes-index.sh");
 
 // Run the automation detached and forget it: no failure of its is worth disturbing the session with.
 function runScript(script: string, ...args: string[]) {
   if (!SPOOL || !existsSync(script)) return;
   try {
+    // `setup` made the spool of its own home; funes drains only one that exists.
+    mkdirSync(SPOOL, { recursive: true });
     // Through `sh`, the one shell a box running pi is promised.
     const child = spawn("sh", [script, ...args], { env: funesEnv(), detached: true, stdio: "ignore" });
     child.on("error", () => {});
@@ -267,9 +279,10 @@ function sweepRoot(file: string): string {
 }
 
 // Convert the history `setup` left behind, once, and say whether it did. Failure keeps the marker,
-// so the next start retries.
+// so the next start retries. That history is the installed home's: a pi started under another home
+// leaves it for a start under that one.
 function seedPending(): boolean {
-  if (!SPOOL || !existsSync(SEED_PENDING)) return false;
+  if (!SPOOL || SPOOL !== RECORDED || !existsSync(SEED_PENDING)) return false;
   try {
     convertTree(readFileSync(SEED_PENDING, "utf8").trim(), SPOOL);
     rmSync(SEED_PENDING);

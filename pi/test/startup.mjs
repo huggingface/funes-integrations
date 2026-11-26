@@ -82,8 +82,10 @@ export function spawn(command, ...args) {
 `);
   const sessions = join(root, "sessions");
   mkdirSync(sessions, { recursive: true });
-  const spool = join(root, "spool");
-  mkdirSync(spool);
+  // The home funes installed it for, which is the one pi runs under unless a test says otherwise.
+  process.env.FUNES_HOME = root;
+  const spool = join(root, "spool", "pi");
+  mkdirSync(spool, { recursive: true });
   writeFileSync(join(ext, "spool"), `${spool}\n`);
   writeFileSync(join(ext, "sessions"), `${sessions}\n`);
   if (pending) writeFileSync(join(ext, "seed-pending"), `${sessions}\n`);
@@ -156,8 +158,11 @@ async function startup(memory, { body = MCP_SERVER, missing = "" } = {}) {
 
 // A turn of the session at `file`, with `stale` written since the last sweep and `foreign` a
 // `.jsonl` no sweep may touch: what the spool holds afterwards, and what the worker was handed.
-async function turn(root, file, stale, foreign, memory = "") {
-  const { ext, spool, log } = install(root, { memory });
+// `home` is the funes home pi runs under, when it is not the one the extension was installed for.
+async function turn(root, file, stale, foreign, memory = "", home = "") {
+  const { ext, spool: installed, log } = install(root, { memory });
+  if (home) process.env.FUNES_HOME = home;
+  const spool = home ? join(home, "spool", "pi") : installed;
   process.env.FUNES_BIN = fakeFunes(root);
   const handlers = await activate(ext);
   // The records are older than the sessions, so the sweep sees the sessions as new.
@@ -167,7 +172,8 @@ async function turn(root, file, stale, foreign, memory = "") {
   await handlers.turn_end({}, { sessionManager: { getSessionFile: () => named } });
   const worker = (await workerLog(log, "the turn")).split("\n")[0];
   const converted = (p) => existsSync(join(spool, `${p.split("/").pop().replace(/\.jsonl$/, "")}.funes.jsonl`));
-  return { named: converted(named), stale: converted(others[0]), foreign: converted(others[1]), swept: existsSync(join(ext, "swept")), worker };
+  const strayed = home !== "" && existsSync(join(installed, "a.funes.jsonl"));
+  return { named: converted(named), stale: converted(others[0]), foreign: converted(others[1]), swept: existsSync(join(ext, "swept")), worker, strayed };
 }
 
 // The `funes mcp` it spawns, and the worker, name funes, pi and its version in their Hub requests.
@@ -209,6 +215,21 @@ for (const [missing, error] of [["missing-funes", "ENOENT"], ["no-pipes", "EMFIL
   }
 }
 
+// Pending history is the installed home's: a pi started under another home leaves it for a start
+// under that one.
+{
+  const root = scratch("funes-pi-startup-");
+  process.env.FUNES_BIN = fakeFunes(root);
+  const { ext, sessions } = install(root, { pending: true });
+  session(join(sessions, "--Users-me-repo--"), "session.jsonl");
+  process.env.FUNES_HOME = join(root, "other");
+  const handlers = await activate(ext);
+  await handlers.session_start({ reason: "startup" }, { ui: { notify() {} } });
+  if (!existsSync(join(ext, "seed-pending")) || existsSync(join(root, "other", "spool", "pi", "session.funes.jsonl"))) {
+    throw new Error("another home: took the pending history of the home the extension was installed for");
+  }
+}
+
 // Per turn, under pi's own root: the session that spoke and the one another project wrote since
 // the last sweep, and never a file beside the root.
 {
@@ -226,6 +247,15 @@ for (const [missing, error] of [["missing-funes", "ENOENT"], ["no-pipes", "EMFIL
   const sessions = join(root, "sessions");
   const got = await turn(root, join(sessions, "--Users-me-repo--/a.jsonl"), join(sessions, "--Users-me-other--/b.jsonl"), join(root, "beside/x.jsonl"), "acme/kb");
   if (got.worker !== "funes-index.sh acme/kb") throw new Error(`memory bound: expected the turn's worker handed the memory, got ${got.worker}`);
+}
+// A pi started under another funes home is that home's: its turns go to the spool the `funes` it
+// runs drains, and the memory recorded for the home `setup` ran under is not handed to the worker.
+{
+  const root = scratch("funes-pi-turn-");
+  const sessions = join(root, "sessions");
+  const got = await turn(root, join(sessions, "--Users-me-repo--/a.jsonl"), join(sessions, "--Users-me-other--/b.jsonl"), join(root, "beside/x.jsonl"), "acme/kb", join(root, "other"));
+  if (!got.named || got.strayed) throw new Error(`another home: expected the session in its spool alone, got ${JSON.stringify(got)}`);
+  if (got.worker !== "funes-index.sh") throw new Error(`another home: expected the worker handed no memory, got ${got.worker}`);
 }
 // A session pi was pointed elsewhere (`--session-dir`) sits in that directory with no directory
 // per project: its own directory is swept, and nothing above it.

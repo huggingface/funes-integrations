@@ -24,6 +24,9 @@ export PATH="$tmp/bin:/usr/bin:/bin"
 export FUNES_TEST_CLI_LOG="$tmp/cli.log"
 cp "$HERE/../plugin/funes-index.sh" "$tmp/plugin/"
 script="$tmp/plugin/funes-index.sh"
+# The home funes installed it for, and the `spool` record `setup add` writes beside the script.
+export FUNES_HOME="$tmp/home"
+printf '%s\n' "$FUNES_HOME/spool/hermes" >"$tmp/plugin/spool"
 
 # What funes was asked since the last check, which must be `$1`.
 asked() {
@@ -81,4 +84,21 @@ rm "$FUNES_TEST_CLI_LOG.busy"
 sh "$script"
 asked "index --harness hermes
 push acme/kb" "at the turn after that boundary"
+
+# A `$HOME` spelled with a trailing slash is the home funes recorded without one.
+touch -t 202001010000 "$tmp/plugin/pushed"
+printf '%s\n' "$tmp/user/.funes/spool/hermes" >"$tmp/plugin/spool"
+(unset FUNES_HOME && HOME="$tmp/user/" sh "$script")
+asked "index --harness hermes
+push acme/kb" "under a home spelled with a trailing slash"
+printf '%s\n' "$FUNES_HOME/spool/hermes" >"$tmp/plugin/spool"
+
+# Under another funes home the memory recorded for the installed one is not its binding: a turn
+# with a push due and a boundary both index that home's spool, which they make, and push nothing.
+touch -t 202001010000 "$tmp/plugin/pushed"
+FUNES_HOME="$tmp/other" sh "$script"
+FUNES_HOME="$tmp/other" sh "$script" --publish
+asked "index --harness hermes
+index --harness hermes" "under another home"
+[ -d "$tmp/other/spool/hermes" ] || fail "the other home's spool was not made"
 echo "hermes index: ok"

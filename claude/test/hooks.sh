@@ -15,6 +15,8 @@ fail() {
 }
 
 export HOME="$tmp/home"
+# The hook serves the funes home in its environment: the fake one, not the developer's.
+unset FUNES_HOME
 mkdir -p "$HOME/.funes/agents" "$tmp/bin"
 cat >"$tmp/bin/funes" <<'FAKE'
 #!/bin/sh
@@ -33,7 +35,7 @@ export CLAUDE_CONFIG_DIR="$tmp/claude-config"
 # Installed, with the `spool` record `setup add` writes beside the scripts.
 cp -R "$BUNDLE" "$HOME/.funes/agents/claude"
 scripts="$HOME/.funes/agents/claude/claude-plugin/funes/scripts"
-spool="$tmp/spool"
+spool="$HOME/.funes/spool/claude"
 mkdir -p "$spool"
 printf '%s\n' "$spool" >"$scripts/spool"
 tree="$CLAUDE_CONFIG_DIR/projects/-Users-me-repo"
@@ -234,6 +236,17 @@ rm "$ctl/x.fail"
 tick
 fire
 [ -f "$spool/x.funes.jsonl" ] || fail "a session whose conversion failed was never converted again"
+
+# A session started under another funes home is that home's: converted into the spool the `funes` it
+# runs drains, and never pushed to the memory recorded for the home `setup add` ran under.
+tick
+transcript h.jsonl
+: >"$FUNES_TEST_CLI_LOG"
+(export FUNES_HOME="$tmp/other" && fire --publish h.jsonl) || exit 1
+[ -f "$tmp/other/spool/claude/h.funes.jsonl" ] || fail "a session under another home was not converted into its spool"
+[ ! -e "$spool/h.funes.jsonl" ] || fail "a session under another home reached the installed home's spool"
+[ "$(cat "$FUNES_TEST_CLI_LOG")" = "$i" ] || fail "funes was asked, under another home:
+$(cat "$FUNES_TEST_CLI_LOG")"
 
 # The foreground half, as the hook runs it: the payload on stdin — carrying an assistant message
 # larger than any argument could — handed to a detached worker, and the hook returns at once.

@@ -53,7 +53,8 @@ pi's own sessions are untouched.
   token for a private remote). Which one is funes's to bind:
   [docs/add.md](https://github.com/huggingface/funes/blob/main/docs/add.md#binding-a-memory).
   `FUNES_MEMORY` overrides it for a run: forwarded as the `funes mcp <memory>` positional, and used
-  as the publish target.
+  as the publish target. A pi started under another `FUNES_HOME` than the one `funes add pi` ran
+  under indexes into that home's memory and reads it, and publishes only to `FUNES_MEMORY`.
 
 The extension declares no dependencies: it talks to `funes mcp` over stdio and to pi through the
 extension API pi's loader provides.

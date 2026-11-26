@@ -17,6 +17,9 @@ set -u
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 LOG="$HERE/funes-sync.log"
 HARNESS=hermes
+# The spool `funes` drains below: in the home hermes was started under, as funes resolves it, a
+# trailing slash on `$HOME` dropped as funes drops it.
+SPOOL=${FUNES_HOME:-${HOME%/}/.funes}/spool/$HARNESS
 # How old the last push gets, in minutes, before a turn pushes too. A push compacts the remote once
 # enough rows sit unindexed there, so many small pushes compact it more often than a few large ones.
 PUSH_EVERY=60
@@ -46,11 +49,13 @@ index() {
     fi
 }
 
-# The memory `$1`, else the one `setup add` recorded beside this script, else nothing.
+# The memory `$1`, else the one `setup add` recorded beside this script, else nothing. That one is
+# the binding of the home `setup add` ran under, whose spool it recorded too: a run under another
+# home has none, and pushes nothing.
 bound_memory() {
     if [ -n "$1" ]; then
         printf '%s\n' "$1"
-    else
+    elif [ "$SPOOL" = "$(cat "$HERE/spool" 2>/dev/null)" ]; then
         head -n 1 "$HERE/memory" 2>/dev/null | tr -d '[:space:]'
     fi
 }
@@ -111,6 +116,8 @@ if [ -z "$funes" ] || [ ! -x "$funes" ]; then
     log "index ABORT: funes not found; skipping."
     exit 0
 fi
+# `setup add` made the spool of its own home; funes drains only one that exists.
+[ ! -s "$HERE/spool" ] || mkdir -p "$SPOOL"
 case "${1:-}" in
 --publish) publish "${2:-}" ;;
 *) turn "${1:-}" ;;

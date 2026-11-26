@@ -33,9 +33,13 @@ $got"
     rm -f "$FUNES_TEST_CLI_LOG"
 }
 
-# With no memory, a turn indexes alone.
+# With no memory, a turn indexes alone, and so does a boundary: the script pushes to the memory it
+# is handed, never to one it finds on disk.
+printf 'acme/kb\n' >"$tmp/scripts/memory"
 sh "$script"
-asked "index --harness pi" "at a turn with no memory"
+sh "$script" --publish
+asked "index --harness pi
+index --harness pi" "handed no memory"
 
 # Handed a memory, the first turn, with no push behind it, pushes after its index. The next, right
 # after that push, indexes alone, and one after that push has aged pushes again.
