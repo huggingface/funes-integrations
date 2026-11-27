@@ -6,6 +6,7 @@
           {
             "type": "command",
             "command": "sh \"${PLUGIN_ROOT}/scripts/funes-index.sh\"",
+            "commandWindows": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"${PLUGIN_ROOT}/scripts/funes-index.ps1\"",
             "timeout": 15,
             "statusMessage": "Indexing turn into funes memory"
           }
