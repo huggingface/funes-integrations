@@ -18,64 +18,49 @@ datasets, and installs nothing.
 
 ## How the bundles automate
 
-Each bundle gives its agent the funes read tools — `funes mcp` registered as an MCP server, or
-fronted by the extension where the agent has no MCP client — and drives one script of its own,
-`funes-index.sh`, in two modes. Per turn, it converts the session that just changed into funes's
-spool and runs `funes index --harness <id>`, then converts any other session changed since it last
-ran, so a session whose own hook never fired — untrusted, timed out, a host that died mid-turn — is
-caught at the next turn; the run is time-boxed, so a backlog fills in a bounded step per turn. At
-the session boundaries, as `funes-index.sh --publish` and only with a memory bound, it converts,
-indexes — waiting out a per-turn run's lock — and pushes; it runs at the session's end and again at
-the next start, catching up whatever a missed end left behind. With a memory bound, a turn pushes
-too once the last push is an hour old: a session can stop without its end ever firing (a
-conversation switched away, a window closed, a host disconnected), and the next start may never
-come on that host. The conversion is the bundle's own converter: a script for Claude Code and
-Codex, the extension or plugin itself for pi and Hermes. The work runs detached, so a hook returns
-in well under a second and never blocks the turn or trips a timeout. The memory rides in a file
-beside the scripts, so every hooks file is static.
+Each bundle gives its agent the funes read tools: `funes mcp`, registered as an MCP server, or
+fronted by the bundle where the agent has no MCP client. It keeps the memory current from the
+agent's own events, converting the agent's sessions with a converter of its own:
 
-| Bundle | Per turn | Publish, with a memory bound |
-| --- | --- | --- |
-| `claude` | `Stop`, `SubagentStop` | `SessionEnd`, `SessionStart` |
-| `codex` | `Stop` | `SessionEnd`, `SessionStart` |
-| `hermes` | `post_llm_call` | `on_session_finalize`, `on_session_start` |
-| `pi` | `turn_end` | `session_shutdown`, and `session_start` when the process is fresh |
+- Per turn, it converts the session that just changed, and any other session changed since it last
+  ran, into funes's spool, then runs `funes index --harness <id>`. A session whose own hook never
+  fired (untrusted, timed out, a host that died mid-turn) is caught at the next turn. The index is
+  time-boxed, so a backlog fills in a bounded step per turn.
+- At the session boundaries, and only with a memory bound, it indexes, waiting out a per-turn run's
+  lock, then pushes. It does so at the session's end and again at the next start, which catches up
+  whatever a missed end left behind.
+- With a memory bound, a turn pushes too once the last push is an hour old. A session can stop
+  without its end ever firing (a conversation switched away, a window closed, a host
+  disconnected), and the next start may never come on that host.
 
-At install, `setup add` converts the sessions the agent has already written. The `claude` and
-`codex` setups share a mark with their hooks' sweeps, so a re-add reads only the sessions written
-since the last of either, and leaves out each one whose last turn the local memory holds, as its
-`funes sessions` row says (funes 1.9.0 and newer). Both keep those rows with the mark, `claude`
-beside its scripts and `codex` in the plugin's data directory, since Codex pins a hash of the
-plugin's contents when its hooks are trusted. A session listed there and gone from the memory since
-has the whole history read again, and for `claude`, a session the memory holds without the messages
-typed while Claude was working keeps that numbering, and never gets them.
+The work runs detached, so a hook returns in well under a second and never blocks the turn or trips
+a timeout. The memory rides in a file of its own, so the hooks never change with it. At install,
+`setup add` converts the sessions the agent has already written.
 
-What funes guarantees around these — local-first indexing, one writer at a time, the secrets gate,
-the wrong-memory guard — is in funes's
+What funes guarantees around these (local-first indexing, one writer at a time, the secrets gate,
+the wrong-memory guard) is in funes's
 [automation docs](https://github.com/huggingface/funes/blob/main/docs/automation.md).
+
+## What a bundle runs on
+
+Two guidelines keep a bundle running wherever its agent runs:
+
+- Use tools that work on every platform and that the agent already uses, such as its own runtime.
+- Avoid adding dependencies, tools or packages: nothing should be installed for funes alone.
+
+`setup` is the exception: funes runs it with a POSIX shell, as its
+[integration contract](https://github.com/huggingface/funes/blob/main/docs/add.md#the-integration-contract)
+describes.
 
 ## Converting by hand
 
 Indexing an agent's history on a machine that never ran the automation — an archive, a colleague's
 export — is the bundle's converter into a directory of your own, then `funes index` on that
 directory, as funes's [add docs](https://github.com/huggingface/funes/blob/main/docs/add.md#converting-by-hand)
-describe. Each converter is its bundle's own, and emits the session and turn ids the hooks do.
-`<bundle>` is `~/.funes/agents/<id>` once `funes add <id>` has run on any machine, or `<id>/` in
-this checkout:
-
-| Bundle | Converter |
-| --- | --- |
-| `claude` | `<bundle>/claude-plugin/funes/convert <transcript.jsonl> [out.funes.jsonl]` — needs jq; one argument prints to stdout |
-| `codex` | `<bundle>/codex-plugin/plugins/funes/convert <rollout.jsonl> [out.funes.jsonl]` — needs jq; one argument prints to stdout |
-| `pi` | `node <bundle>/convert.mjs <session.jsonl \| sessions-root> <out-dir>` — a root converts every session under it |
-| `hermes` | `python3 <bundle>/plugin/convert.py <state.db> <out-dir> [session-id]` — every session in the store unless one is named |
-
-```bash
-for t in /archive/.claude/projects/*/*.jsonl; do
-    ~/.funes/agents/claude/claude-plugin/funes/convert "$t" ~/imports/"$(basename "$t" .jsonl)".funes.jsonl
-done
-funes index ~/imports
-```
+describe. Each converter is its bundle's own, and emits the session and turn ids the hooks do. How
+to run it is in the bundle's README: [claude](claude/README.md#converting-by-hand),
+[codex](codex/README.md#converting-by-hand), [hermes](hermes/README.md#converting-by-hand),
+[pi](pi/README.md#converting-by-hand).
 
 ### Hugging Face agent-traces datasets
 

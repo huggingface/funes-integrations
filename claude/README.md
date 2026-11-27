@@ -29,6 +29,13 @@ named again. Re-running `funes add claude` refreshes the plugin: Claude keeps a 
 until it is reinstalled, so the plugin is uninstalled and installed again. An install from before
 the registry, at `~/.funes/integrations/claude-plugin`, is unregistered and deleted on sight.
 
+`funes add claude` also converts the transcripts Claude Code has already written. It shares a mark
+with the hooks' sweeps, so a re-add reads only the transcripts written since the last of either,
+and leaves out each one whose last turn the local memory holds, as its `funes sessions` row says
+(funes 1.9.0 and newer). Those rows are kept with the mark, beside the scripts. A session listed
+there and gone from the memory since has the whole history read again. A session the memory holds
+without the messages typed while Claude was working keeps that numbering, and never gets them.
+
 ## Remove
 
 ```sh
@@ -49,3 +56,23 @@ Your memory and Claude Code's own transcripts are untouched.
 - A funes memory the binary can read — local, or a live `hf://` remote (needs network + an HF
   token for a private remote). Which one is funes's to bind:
   [docs/add.md](https://github.com/huggingface/funes/blob/main/docs/add.md#binding-a-memory).
+
+## Converting by hand
+
+The hooks' converter also converts transcripts they never saw, such as an archive or a colleague's
+export. It turns one transcript into a turns file, with the session and turn ids the hooks give it,
+and prints to stdout when it is given no output path. It needs jq:
+
+```sh
+~/.funes/agents/claude/claude-plugin/funes/convert <transcript.jsonl> [out.funes.jsonl]
+```
+
+In this checkout it is `claude/claude-plugin/funes/convert`. Convert into a directory of your own,
+then index that directory:
+
+```bash
+for t in /archive/.claude/projects/*/*.jsonl; do
+    ~/.funes/agents/claude/claude-plugin/funes/convert "$t" ~/imports/"$(basename "$t" .jsonl)".funes.jsonl
+done
+funes index ~/imports
+```
