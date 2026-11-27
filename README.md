@@ -43,7 +43,8 @@ the wrong-memory guard) is in funes's
 
 ## What a bundle runs on
 
-Two guidelines keep a bundle running wherever its agent runs:
+Each bundle's README states the platforms it officially supports. Two guidelines keep it working
+on each of them:
 
 - Use tools that work on every platform and that the agent already uses, such as its own runtime.
 - Avoid adding dependencies, tools or packages: nothing should be installed for funes alone.

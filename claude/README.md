@@ -15,6 +15,10 @@ How the hooks work is in this repository's [README](../README.md#how-the-bundles
 The plugin's funes skill guides searches for earlier answers, including filtering out tool output,
 reading surrounding turns, and checking the indexing backlog when recent work is missing.
 
+## Platforms
+
+Officially supported on macOS and Linux, WSL2 included.
+
 ## Install
 
 Once `funes` is on your PATH:
