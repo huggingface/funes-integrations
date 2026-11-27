@@ -17,7 +17,10 @@ reading surrounding turns, and checking the indexing backlog when recent work is
 
 ## Platforms
 
-Officially supported on macOS and Linux, WSL2 included.
+Officially supported on macOS and Linux, WSL2 included, and on Windows. There funes runs
+`setup.ps1`, and the hooks and the converter run on Windows PowerShell 5.1, which every Windows has:
+the plugin needs neither Git for Windows nor jq. Its hooks start Windows PowerShell with no shell
+between, whether or not Claude Code found Git Bash.
 
 ## Install
 
@@ -53,10 +56,12 @@ Your memory and Claude Code's own transcripts are untouched.
 
 - `funes` on `PATH` (set `FUNES_BIN` to override the binary path).
 - `claude` on `PATH`; without it the files are installed and the commands to register them printed.
-- A stock `jq`, 1.6 or newer: the converter is jq, and there is nothing to capture without it.
-  macOS 15 and newer ship one; elsewhere `apt install jq`, `dnf install jq`, `apk add jq`.
-  `funes add claude` checks that the jq on PATH converts a transcript the way funes reads it before
-  it installs anything.
+- On macOS and Linux, a stock `jq`, 1.6 or newer: the converter is jq, and there is nothing to
+  capture without it. macOS 15 and newer ship one; elsewhere `apt install jq`, `dnf install jq`,
+  `apk add jq`. `funes add claude` checks that the jq on PATH converts a transcript the way funes
+  reads it before it installs anything.
+- On Windows, Claude Code 2.1.139 or newer, whose command hooks take `args`: the hooks name
+  `powershell.exe` and its arguments, which Claude Code starts with no shell.
 - A funes memory the binary can read — local, or a live `hf://` remote (needs network + an HF
   token for a private remote). Which one is funes's to bind:
   [docs/add.md](https://github.com/huggingface/funes/blob/main/docs/add.md#binding-a-memory).
@@ -79,4 +84,14 @@ for t in /archive/.claude/projects/*/*.jsonl; do
     ~/.funes/agents/claude/claude-plugin/funes/convert "$t" ~/imports/"$(basename "$t" .jsonl)".funes.jsonl
 done
 funes index ~/imports
+```
+
+On Windows the converter is `convert.ps1`, which makes the same turns, run by Windows PowerShell:
+
+```powershell
+$convert = "$HOME\.funes\agents\claude\claude-plugin\funes\convert.ps1"
+foreach ($t in Get-ChildItem D:\archive\.claude\projects\*\*.jsonl) {
+    powershell -NoProfile -ExecutionPolicy Bypass -File $convert $t.FullName "$HOME\imports\$($t.BaseName).funes.jsonl"
+}
+funes index $HOME\imports
 ```
