@@ -303,17 +303,29 @@ function Remove-Codex {
     Write-Output 'removed funes from Codex: recall registration, plugin, hooks, and skill.'
 }
 
-switch -CaseSensitive ($args[0]) {
-    'add' {
-        if ($args.Count -gt 2) { Exit-Usage }
-        $memory = ''
-        if ($args.Count -eq 2) { $memory = $args[1] }
-        Add-Codex $memory
+# The agents' own programs write UTF-8, which Windows PowerShell reads in the console's code page,
+# garbling what is past ASCII on its way to the user. It is read as UTF-8 while this script runs,
+# and the console gets its code page back after.
+$consoleEncoding = $null
+try {
+    $consoleEncoding = [Console]::OutputEncoding
+    [Console]::OutputEncoding = $Utf8
+} catch {}
+try {
+    switch -CaseSensitive ($args[0]) {
+        'add' {
+            if ($args.Count -gt 2) { Exit-Usage }
+            $memory = ''
+            if ($args.Count -eq 2) { $memory = $args[1] }
+            Add-Codex $memory
+        }
+        'remove' {
+            if ($args.Count -ne 1) { Exit-Usage }
+            Remove-Codex
+        }
+        default { Exit-Usage }
     }
-    'remove' {
-        if ($args.Count -ne 1) { Exit-Usage }
-        Remove-Codex
-    }
-    default { Exit-Usage }
+} finally {
+    if ($consoleEncoding) { try { [Console]::OutputEncoding = $consoleEncoding } catch {} }
 }
 exit 0
