@@ -46,7 +46,8 @@ grep -q "installed funes into pi" "$tmp/add.out" || fail "add did not report: $(
 [ "$(cat "$dir/spool")" = "$FUNES_HOME/spool/pi" ] || fail "the spool is not recorded"
 [ "$(cat "$dir/sessions")" = "$sessions" ] || fail "the sessions root is not recorded"
 [ -f "$FUNES_HOME/spool/pi/session.funes.jsonl" ] || fail "the history was not seeded"
-[ -x "$setup" ] && [ -x "$dir/scripts/funes-index.sh" ] || fail "the scripts are not executable"
+[ -x "$setup" ] || fail "setup is not executable"
+[ -f "$dir/scripts/funes-index.mjs" ] || fail "the automation worker is missing"
 # The version gate, then the registration.
 expected="--version
 install $dir"
