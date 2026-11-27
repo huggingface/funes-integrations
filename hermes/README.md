@@ -14,6 +14,11 @@ last push is an hour old. Plugin hooks are not shell hooks, so Hermes's consent 
 (`~/.hermes/shell-hooks-allowlist.json`) is not involved. How the hooks work is in this
 repository's [README](../README.md#how-the-bundles-automate).
 
+## Platforms
+
+Officially supported on macOS and Linux, WSL2 included. Native Windows is not supported: Hermes
+itself does not run there.
+
 ## Install
 
 Once `funes` is on your PATH:

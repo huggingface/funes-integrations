@@ -21,6 +21,10 @@ change to a funes hook or to the memory bound, and never because the hooks ran: 
 (their log, the mark of their sweeps) goes in the directory Codex keeps for the plugin's data,
 `~/.codex/plugins/data/funes-huggingface`, outside the plugin.
 
+## Platforms
+
+Officially supported on macOS and Linux, WSL2 included.
+
 ## Install
 
 Once `funes` is on your PATH:

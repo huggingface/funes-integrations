@@ -18,6 +18,10 @@ a memory bound, a turn publishes too, once the last push is an hour old.
 Nothing outside `~/.funes/agents/pi` is configured. How the hooks work is in
 this repository's [README](../README.md#how-the-bundles-automate).
 
+## Platforms
+
+Officially supported on macOS and Linux, WSL2 included.
+
 ## Install
 
 Once `funes` is on your PATH, one command extracts this extension to a fixed
