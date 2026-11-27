@@ -23,7 +23,10 @@ change to a funes hook or to the memory bound, and never because the hooks ran: 
 
 ## Platforms
 
-Officially supported on macOS and Linux, WSL2 included.
+Officially supported on macOS and Linux, WSL2 included, and on Windows. There funes runs
+`setup.ps1`, and the hooks and the converter run on Windows PowerShell 5.1, which every Windows has:
+the plugin needs neither Git for Windows nor jq. Each hook carries its command for Windows in
+`commandWindows`, which Codex runs in place of `command` there.
 
 ## Install
 
@@ -44,9 +47,10 @@ each one whose last turn the local memory holds, as its `funes sessions` row say
 newer). Those rows are kept with the mark, in the plugin's data directory. A session listed there
 and gone from the memory since has the whole history read again.
 
-An install from before the plugin is cleared on sight: its skill and scripts go, and its entries
-come out of Codex's own `hooks.json` — hooks of your own in that file stay, and the file goes only
-once nothing is left in it. Without `jq` to do that, the file is left as it is and named.
+On macOS and Linux, an install from before the plugin is cleared on sight: its skill and scripts
+go, and its entries come out of Codex's own `hooks.json` — hooks of your own in that file stay, and
+the file goes only once nothing is left in it. Without `jq` to do that, the file is left as it is
+and named. No such install ever ran on Windows.
 
 ## Remove
 
@@ -63,10 +67,12 @@ Codex's own rollouts are untouched.
 - `funes` on `PATH` (set `FUNES_BIN` to override the binary path).
 - `codex` on `PATH`, with plugins; without it the files are installed and the commands to register
   them printed.
-- A stock `jq`, 1.6 or newer: the converter is jq, and there is nothing to capture without it.
-  macOS 15 and newer ship one; elsewhere `apt install jq`, `dnf install jq`, `apk add jq`.
-  `funes add codex` checks that the jq on PATH converts a rollout the way funes reads it before it
-  installs anything.
+- On macOS and Linux, a stock `jq`, 1.6 or newer: the converter is jq, and there is nothing to
+  capture without it. macOS 15 and newer ship one; elsewhere `apt install jq`, `dnf install jq`,
+  `apk add jq`. `funes add codex` checks that the jq on PATH converts a rollout the way funes reads
+  it before it installs anything.
+- On Windows, a Codex whose hooks take `commandWindows`; an older one runs the `sh` command, which
+  fails there.
 - A funes memory the binary can read — local, or a live `hf://` remote (needs network + an HF
   token for a private remote). Which one is funes's to bind:
   [docs/add.md](https://github.com/huggingface/funes/blob/main/docs/add.md#binding-a-memory).
@@ -83,3 +89,9 @@ and prints to stdout when it is given no output path. It needs jq:
 
 In this checkout it is `codex/codex-plugin/plugins/funes/convert`. Convert into a directory of your
 own, then run `funes index` on that directory.
+
+On Windows the converter is `convert.ps1`, which makes the same turns, run by Windows PowerShell:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File $HOME\.funes\agents\codex\codex-plugin\plugins\funes\convert.ps1 <rollout.jsonl> [out.funes.jsonl]
+```

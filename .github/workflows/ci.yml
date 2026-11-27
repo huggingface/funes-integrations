@@ -26,6 +26,30 @@ jobs:
       - name: Test the bundle
         run: sh "${{ matrix.id }}/test/run.sh"
 
+  # The bundles that run on native Windows, where funes runs each `setup.ps1` with Windows
+  # PowerShell, and each suite runs the same way. Hermes does not run there.
+  bundles-windows:
+    name: Bundle tests on Windows
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        id: [claude, codex, pi]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The runner's TEMP spells its profile directory by the 8.3 short name, where a path a program
+      # resolves itself is spelled in full: the tests' temporary files go in the runner's own.
+      - name: Test the bundle
+        shell: powershell
+        env:
+          TEMP: ${{ runner.temp }}
+          TMP: ${{ runner.temp }}
+        run: powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${{ matrix.id }}/test/run.ps1"
+
   hf-traces:
     name: hf-traces converter
     runs-on: ubuntu-latest

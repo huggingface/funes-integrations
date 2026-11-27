@@ -9,8 +9,8 @@ Integrations maintained by their authors live wherever their authors put them;
 
 One directory per integration, each a bundle as funes's
 [integration contract](https://github.com/huggingface/funes/blob/main/docs/add.md#the-integration-contract)
-describes it: a `manifest.json`, a `setup` executable, whatever the integration needs beside them,
-and its own tests under `test/`. What each one installs into its agent, which of its events it
+describes it: a `manifest.json`, a `setup` executable, a `setup.ps1` where it runs on Windows,
+whatever the integration needs beside them, and its own tests under `test/`. What each one installs into its agent, which of its events it
 hooks, and what it needs on the box is in its README; what they share is below.
 
 `hf-traces/` is the one directory that is not an integration. It converts Hugging Face agent-traces
@@ -49,7 +49,8 @@ on each of them:
 - Use tools that work on every platform and that the agent already uses, such as its own runtime.
 - Avoid adding dependencies, tools or packages: nothing should be installed for funes alone.
 
-`setup` is the exception: funes runs it with a POSIX shell, as its
+`setup` is the exception: funes runs it with a POSIX shell on Linux and macOS, and on Windows runs
+`setup.ps1` in its place, with Windows PowerShell, as its
 [integration contract](https://github.com/huggingface/funes/blob/main/docs/add.md#the-integration-contract)
 describes.
 
@@ -92,6 +93,12 @@ Each bundle's tests run without a funes binary, against fakes:
 
 ```sh
 sh pi/test/run.sh
+```
+
+A bundle that runs on Windows has a suite for it too, run by Windows PowerShell:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File pi/test/run.ps1
 ```
 
 The `hf-traces` test needs pyarrow. `PYTHON` names the interpreter that has it:

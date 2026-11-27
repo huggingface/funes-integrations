@@ -85,7 +85,7 @@ mark="$data/converted"
 [ -f "$mark" ] || fail "the walk left no mark"
 # Trusting the hooks pins a hash of the plugin's contents, so the walk leaves nothing in the plugin
 # beyond what the hooks read.
-[ "$(ls "$plugin/scripts" | tr '\n' ' ')" = "funes-index.sh memory spool " ] || fail "the walk wrote beside the scripts: $(ls "$plugin/scripts")"
+[ "$(ls "$plugin/scripts" | tr '\n' ' ')" = "funes-index.ps1 funes-index.sh memory spool " ] || fail "the walk wrote beside the scripts: $(ls "$plugin/scripts")"
 # The pre-plugin install is gone: funes wrote every hook in that file, so the file goes with the
 # scripts its entries ran, and both skill copies with it.
 [ ! -e "$codex_dir/hooks.json" ] || fail "the pre-plugin hook entries stay"

@@ -30,7 +30,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join, sep } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 
 import { convertLive, convertTree } from "./convert.mjs";
 
@@ -212,15 +212,25 @@ class FunesMcp {
 const funes = new FunesMcp();
 
 // The automation beside this extension: the index per turn, the publish at a boundary. It serves
-// the spool `funes add pi` recorded; a run from a checkout has none, and spawns nothing.
-const INDEX_SH = join(HERE, "scripts", "funes-index.sh");
+// the spool `funes add pi` recorded; a run from a checkout has none, and starts nothing.
+const WORKER = join(HERE, "scripts", "funes-index.mjs");
 
 // Run the automation detached and forget it: no failure of its is worth disturbing the session with.
-function runScript(script: string, ...args: string[]) {
-  if (!SPOOL || !existsSync(script)) return;
+// It runs on the JS runtime pi runs on, so it needs no shell on any platform, and in its own
+// directory, so that runtime reads no configuration of the project's. A Bun-compiled pi is that
+// runtime once BUN_BE_BUN turns it back into Bun. Deno runs a script only with `run` and the
+// permissions to do its work.
+function runWorker(...args: string[]) {
+  if (!SPOOL || !existsSync(WORKER)) return;
+  const argv = process.versions.deno ? ["run", "--allow-all", WORKER, ...args] : [WORKER, ...args];
   try {
-    // Through `sh`, the one shell a box running pi is promised.
-    const child = spawn("sh", [script, ...args], { env: funesEnv(), detached: true, stdio: "ignore" });
+    const child = spawn(process.execPath, argv, {
+      cwd: dirname(WORKER),
+      env: process.versions.bun ? { ...funesEnv(), BUN_BE_BUN: "1" } : funesEnv(),
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+    });
     child.on("error", () => {});
     child.unref();
   } catch {}
@@ -261,9 +271,11 @@ function convertStale(file: string) {
 // Where the sweep looks for the sessions the last one missed: the root `setup` found, when the
 // session in progress is under it; else the session's own directory — pi writes straight into a
 // `--session-dir`, with no directory per project, and a walk any higher would take in files that
-// are not sessions at all.
+// are not sessions at all. Both paths are resolved before they are compared, and on Windows, where
+// `c:\users\...` and `C:/Users/...` name one directory, compared regardless of case.
 function sweepRoot(file: string): string {
-  return SESSIONS && file.startsWith(SESSIONS + sep) ? SESSIONS : dirname(file);
+  const key = (path: string) => (process.platform === "win32" ? resolve(path).toLowerCase() : resolve(path));
+  return SESSIONS && key(file).startsWith(key(SESSIONS) + sep) ? SESSIONS : dirname(file);
 }
 
 // Convert the history `setup` left behind, once, and say whether it did. Failure keeps the marker,
@@ -315,20 +327,20 @@ export default async function (pi: any) {
     // process that never shut down cleanly left unpublished — and whatever `setup` could not
     // convert, seeded first so the worker's index takes it in: the publish indexes before it pushes.
     const seeded = seedPending();
-    if (memory) runScript(INDEX_SH, "--publish", memory);
-    else if (seeded) runScript(INDEX_SH);
+    if (memory) runWorker("--publish", memory);
+    else if (seeded) runWorker();
   });
 
   // Per turn, so a session killed mid-flight is indexed up to its last completed turn and, with a
-  // memory bound, pushed once the script's last push is `PUSH_EVERY` minutes old.
+  // memory bound, pushed once the worker's last push is an hour old.
   pi.on("turn_end", async (_event: any, ctx: any) => {
     convertStale(convertSession(ctx));
-    if (memory) runScript(INDEX_SH, memory);
-    else runScript(INDEX_SH);
+    if (memory) runWorker(memory);
+    else runWorker();
   });
 
   // A reload replaces the extension instance without ending the session: nothing to publish.
   pi.on("session_shutdown", async (event: any) => {
-    if (memory && event?.reason !== "reload") runScript(INDEX_SH, "--publish", memory);
+    if (memory && event?.reason !== "reload") runWorker("--publish", memory);
   });
 }

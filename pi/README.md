@@ -20,7 +20,9 @@ this repository's [README](../README.md#how-the-bundles-automate).
 
 ## Platforms
 
-Officially supported on macOS and Linux, WSL2 included.
+Officially supported on macOS and Linux, WSL2 included, and on Windows, where funes runs
+`setup.ps1` with Windows PowerShell. Everywhere, the extension indexes through a worker it starts on
+the JS runtime pi itself runs on, so no shell is involved on any platform.
 
 ## Install
 
@@ -34,6 +36,9 @@ funes add pi
 funes installs the extension from its published release and brings it to the
 newest one on every run; `funes add pi --from ./pi` installs this checkout's
 copy, which then runs as installed until named again.
+
+`funes add pi` also converts the sessions pi has already written, with the first of `node`, `bun`
+or `deno` on PATH. With none of them, the extension converts them itself the next time pi starts.
 
 For development you can also install the package directly with `pi install ./pi`,
 or load it for a single run with `pi -e ./pi`.
@@ -49,7 +54,8 @@ pi's own sessions are untouched.
 
 ## Requirements
 
-- `funes` on `PATH` (set `FUNES_BIN` to override the binary path).
+- `funes` on `PATH`, or where its installer puts it, `~/.local/bin` (set `FUNES_BIN` to override
+  the binary path).
 - pi >= 0.84.0, which is where pi validates the nullable-union arguments the funes tool schemas
   declare. `funes add pi` refuses to register the extension on an older pi rather than leave you
   with tools that reject their own calls.
