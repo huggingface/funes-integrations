@@ -57,3 +57,15 @@ pi's own sessions are untouched.
 
 The extension declares no dependencies: it talks to `funes mcp` over stdio and to pi through the
 extension API pi's loader provides.
+
+## Converting by hand
+
+The extension's converter also converts sessions it never saw, such as an archive or a colleague's
+export, with the session and turn ids the extension gives them. Handed a sessions root, it converts
+every session under it:
+
+```sh
+node ~/.funes/agents/pi/convert.mjs <session.jsonl | sessions-root> <out-dir>
+```
+
+In this checkout it is `pi/convert.mjs`. Then run `funes index` on the output directory.

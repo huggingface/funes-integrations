@@ -50,3 +50,15 @@ own session store are untouched.
 - A funes memory the binary can read — local, or a live `hf://` remote (needs network + an HF
   token for a private remote). Which one is funes's to bind:
   [docs/add.md](https://github.com/huggingface/funes/blob/main/docs/add.md#binding-a-memory).
+
+## Converting by hand
+
+The plugin's converter also converts sessions it never saw, such as another machine's store, with
+the session and turn ids the plugin gives them. It converts every session in the store unless one
+is named:
+
+```sh
+python3 ~/.funes/agents/hermes/plugin/convert.py <state.db> <out-dir> [session-id]
+```
+
+In this checkout it is `hermes/plugin/convert.py`. Then run `funes index` on the output directory.

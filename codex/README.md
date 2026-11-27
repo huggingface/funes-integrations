@@ -34,6 +34,12 @@ funes installs the plugin from its published release and brings it to the newest
 named again. A Codex too old to have plugins stops the install rather than leaving it silently
 unpublished.
 
+`funes add codex` also converts the rollouts Codex has already written. It shares a mark with the
+hooks' sweeps, so a re-add reads only the rollouts written since the last of either, and leaves out
+each one whose last turn the local memory holds, as its `funes sessions` row says (funes 1.9.0 and
+newer). Those rows are kept with the mark, in the plugin's data directory. A session listed there
+and gone from the memory since has the whole history read again.
+
 An install from before the plugin is cleared on sight: its skill and scripts go, and its entries
 come out of Codex's own `hooks.json` — hooks of your own in that file stay, and the file goes only
 once nothing is left in it. Without `jq` to do that, the file is left as it is and named.
@@ -60,3 +66,16 @@ Codex's own rollouts are untouched.
 - A funes memory the binary can read — local, or a live `hf://` remote (needs network + an HF
   token for a private remote). Which one is funes's to bind:
   [docs/add.md](https://github.com/huggingface/funes/blob/main/docs/add.md#binding-a-memory).
+
+## Converting by hand
+
+The hooks' converter also converts rollouts they never saw, such as an archive or a colleague's
+export. It turns one rollout into a turns file, with the session and turn ids the hooks give it,
+and prints to stdout when it is given no output path. It needs jq:
+
+```sh
+~/.funes/agents/codex/codex-plugin/plugins/funes/convert <rollout.jsonl> [out.funes.jsonl]
+```
+
+In this checkout it is `codex/codex-plugin/plugins/funes/convert`. Convert into a directory of your
+own, then run `funes index` on that directory.
