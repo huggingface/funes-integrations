@@ -41,6 +41,17 @@ What funes guarantees around these (local-first indexing, one writer at a time, 
 the wrong-memory guard) is in funes's
 [automation docs](https://github.com/huggingface/funes/blob/main/docs/automation.md).
 
+## What a bundle runs on
+
+Two guidelines keep a bundle running wherever its agent runs:
+
+- Use tools that work on every platform and that the agent already uses, such as its own runtime.
+- Avoid adding dependencies, tools or packages: nothing should be installed for funes alone.
+
+`setup` is the exception: funes runs it with a POSIX shell, as its
+[integration contract](https://github.com/huggingface/funes/blob/main/docs/add.md#the-integration-contract)
+describes.
+
 ## Converting by hand
 
 Indexing an agent's history on a machine that never ran the automation — an archive, a colleague's
