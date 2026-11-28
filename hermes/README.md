@@ -50,8 +50,10 @@ own session store are untouched.
 ## Requirements
 
 - `funes` on `PATH` (set `FUNES_BIN` to override the binary path).
-- `python3` on `PATH` at install, to convert the sessions Hermes has already recorded; without it
-  they are converted as each session ends.
+- `python3` on `PATH` at install, or `python` where that is the name, as on Windows, to convert the
+  sessions Hermes has already recorded; without it they are converted as each session ends.
+- On Windows, [Git for Windows](https://gitforwindows.org): funes runs `setup` with its shell, and
+  the plugin its index script, from `PATH` or from where Git's installer puts it.
 - A funes memory the binary can read — local, or a live `hf://` remote (needs network + an HF
   token for a private remote). Which one is funes's to bind:
   [docs/add.md](https://github.com/huggingface/funes/blob/main/docs/add.md#binding-a-memory).

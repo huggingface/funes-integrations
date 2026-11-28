@@ -30,12 +30,24 @@ spool_dir() {
     printf '%s/spool/%s\n' "${FUNES_HOME:-$HOME/.funes}" "${FUNES_AGENT_ID:-pi}"
 }
 
+# A path as both this shell and a native Windows program read it. The extension runs in pi's own
+# Node, which cannot read the shell's `/c/Users/…`, and pi names its directories `C:\Users\…`, which
+# a `/` cannot split; Git's `cygpath -m` spells either `C:/Users/…`, which both read. Elsewhere a
+# path is left as it is.
+native_path() {
+    if command -v cygpath >/dev/null 2>&1; then
+        cygpath -m -- "$1"
+    else
+        printf '%s\n' "$1"
+    fi
+}
+
 # Where pi keeps its sessions: either override it honours, else the default.
 sessions_dir() {
     if [ -n "${PI_CODING_AGENT_SESSION_DIR:-}" ]; then
-        printf '%s\n' "$PI_CODING_AGENT_SESSION_DIR"
+        native_path "$PI_CODING_AGENT_SESSION_DIR"
     else
-        printf '%s/sessions\n' "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
+        native_path "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/sessions"
     fi
 }
 
@@ -93,7 +105,7 @@ add() {
 
     spool=$(spool_dir)
     mkdir -p "$spool"
-    printf '%s\n' "$spool" >"$HERE/spool"
+    native_path "$spool" >"$HERE/spool"
     # The sessions root, for the extension's sweep: a session pi was pointed elsewhere is swept
     # in its own directory alone.
     sessions_dir >"$HERE/sessions"

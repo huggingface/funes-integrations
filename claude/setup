@@ -4,6 +4,11 @@
 # boundaries. funes never edits the user's settings.json.
 set -eu
 
+# Git for Windows' shell, started from a native program, keeps Windows' PATH order, which puts
+# System32, whose `find` is a text search, ahead of Git's own tools: those go first. Only such a
+# shell has /usr/bin/cygpath.
+[ ! -x /usr/bin/cygpath ] || PATH="/usr/bin:$PATH"
+
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PLUGIN_ROOT="$HERE/claude-plugin"
 PLUGIN_ID="funes@huggingface"
@@ -18,6 +23,11 @@ FUNES="${FUNES_BIN:-funes}"
 # HF_HUB_USER_AGENT_ORIGIN to its User-Agent. The registration is static, so the agent's version,
 # which the hooks add, is left out.
 MCP_ENV="HF_HUB_USER_AGENT_ORIGIN=funes; agent/claude"
+
+# A native Windows jq ends every line it writes with CRLF unless told `--binary`. No other jq writes
+# one, and a jq before 1.7 may not take the flag, so only a jq seen writing CRLF is told.
+JQ_FLAGS=
+case $(jq -n 1 2>/dev/null | od -An -c) in *'\r'*) JQ_FLAGS=--binary ;; esac
 
 usage() {
     echo "usage: setup add [MEMORY] | setup remove" >&2
@@ -49,12 +59,14 @@ require_jq() {
         echo "  Debian   sudo apt install jq" >&2
         echo "  Fedora   sudo dnf install jq" >&2
         echo "  Alpine   apk add jq" >&2
+        echo "  Windows  winget install jqlang.jq" >&2
         echo "Install it, then run \`funes add claude\` again." >&2
         exit 1
     fi
     if ! "$PLUGIN_ROOT/funes/test/run.sh" >/dev/null 2>&1; then
         echo "the jq on PATH does not convert Claude Code's transcripts the way funes reads them — run" >&2
-        echo "\`$PLUGIN_ROOT/funes/test/run.sh\` to see how it differs. funes needs a stock jq 1.6 or newer." >&2
+        echo "\`$PLUGIN_ROOT/funes/test/run.sh\` to see how it differs. funes needs a stock jq 1.6 or newer," >&2
+        echo "and 1.7 or newer on Windows." >&2
         exit 1
     fi
 }
@@ -78,7 +90,17 @@ indexed() {
 last_turn() {
     sample="$2/${1##*/}"
     tail -n 32 "$1" >"$sample"
-    "$PLUGIN_ROOT/funes/convert" "$sample" | tail -n 1 | jq -r '"\(.session_id) \(.ts)"'
+    FUNES_JQ_FLAGS=$JQ_FLAGS "$PLUGIN_ROOT/funes/convert" "$sample" | tail -n 1 | jq $JQ_FLAGS -r '"\(.session_id) \(.ts)"'
+}
+
+# A path as this shell spells it. Claude Code on Windows names a directory as Windows does,
+# `C:\Users\…`, or `\\server\share\…` on a share, which a `/` cannot split and which is not what
+# `find` lists; Git's `cygpath` gives the spelling `find` uses.
+posix_path() {
+    case $1 in
+    [A-Za-z]:[\\/]* | *\\*) cygpath -u -- "$1" 2>/dev/null && return 0 ;;
+    esac
+    printf '%s\n' "$1"
 }
 
 # Whether a session the rows `$1` list is missing from the rows `$2`: one the memory held at the
@@ -102,7 +124,7 @@ lost() {
 seed() {
     spool=$1
     # Claude Code keeps its transcripts under its config directory, which `CLAUDE_CONFIG_DIR` moves.
-    projects="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects"
+    projects="$(posix_path "${CLAUDE_CONFIG_DIR:-$HOME/.claude}")/projects"
     [ -d "$projects" ] || return 0
     rows="$PLUGIN_ROOT/funes/scripts/indexed"
     mark="$PLUGIN_ROOT/funes/scripts/converted"
@@ -127,7 +149,7 @@ seed() {
             continue
         fi
         stem=${src##*/}
-        "$PLUGIN_ROOT/funes/convert" --indexed "$rows" "$src" "$spool/${stem%.jsonl}.funes.jsonl" || rm -f "$stamp"
+        FUNES_JQ_FLAGS=$JQ_FLAGS "$PLUGIN_ROOT/funes/convert" --indexed "$rows" "$src" "$spool/${stem%.jsonl}.funes.jsonl" || rm -f "$stamp"
     done <"$work/transcripts"
     if [ -e "$stamp" ]; then
         mv -f "$stamp" "$mark"

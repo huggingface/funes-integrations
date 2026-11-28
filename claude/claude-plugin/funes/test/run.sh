@@ -13,6 +13,11 @@ HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 out=$(mktemp -d)
 trap 'rm -rf "$out"' EXIT INT TERM
 
+# Read with the jq the converter runs, told `--binary` when it is a native Windows jq, as the
+# converter tells it.
+JQ_FLAGS=
+case $(jq -n 1 2>/dev/null | od -An -c) in *'\r'*) JQ_FLAGS=--binary ;; esac
+
 "$HERE/../convert" "$HERE/session.jsonl" "$out/got.funes.jsonl"
 if ! diff -u "$HERE/expected.funes.jsonl" "$out/got.funes.jsonl"; then
     echo "claude converter: output changed — see the diff above" >&2
@@ -23,6 +28,21 @@ if [ "$out/got.funes.jsonl" -nt "$HERE/session.jsonl" ] || [ "$out/got.funes.jso
     exit 1
 fi
 
+# A caller that asked the jq on PATH already hands its answer down in FUNES_JQ_FLAGS, and the
+# converter does not ask again: a seed asks once, not once per transcript.
+mkdir "$out/bin"
+cat >"$out/bin/jq" <<EOF
+#!/bin/sh
+[ "\$*" != "-n 1" ] || : >"$out/asked"
+exec "$(command -v jq)" "\$@"
+EOF
+chmod +x "$out/bin/jq"
+PATH="$out/bin:$PATH" FUNES_JQ_FLAGS=$JQ_FLAGS "$HERE/../convert" "$HERE/session.jsonl" "$out/handed.funes.jsonl"
+if [ -e "$out/asked" ] || ! cmp -s "$HERE/expected.funes.jsonl" "$out/handed.funes.jsonl"; then
+    echo "claude converter: handed jq's flags, it asked jq again or converted otherwise" >&2
+    exit 1
+fi
+
 # The numbering of a session the memory already holds, from its row in `--indexed`. In
 # `queued.jsonl`, q1 and q2 were typed while Claude was working, and a2 and a3 are one reply written
 # as two lines with one stamp.
@@ -30,7 +50,7 @@ all="u1 a1 q1 a2 a3 u2 q2 a4"
 without="u1 a1 a2 a3 u2 a4"
 check() {
     printf '%s\n' "$1" >"$out/rows"
-    got=$("$HERE/../convert" --indexed "$out/rows" "$HERE/queued.jsonl" | jq -r .turn_uuid | paste -s -d ' ' -)
+    got=$("$HERE/../convert" --indexed "$out/rows" "$HERE/queued.jsonl" | jq $JQ_FLAGS -r .turn_uuid | paste -s -d ' ' -)
     if [ "$got" != "$2" ]; then
         echo "claude converter: with the row \"$1\", the turns are $got, not $2" >&2
         exit 1
@@ -70,7 +90,7 @@ reply assistant text
 old-prompt user text
 EOF
 "$HERE/../convert" "$HERE/attribution.jsonl" \
-    | jq -r '[.turn_uuid, .role, (.blocks | map(.block_type + (if .tool_name then ":" + .tool_name else "" end)) | join(","))] | join(" ")' \
+    | jq $JQ_FLAGS -r '[.turn_uuid, .role, (.blocks | map(.block_type + (if .tool_name then ":" + .tool_name else "" end)) | join(","))] | join(" ")' \
     >"$out/got"
 if ! diff -u "$out/want" "$out/got"; then
     echo "claude converter: a turn has the wrong role or block type, see the diff above" >&2

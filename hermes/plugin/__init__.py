@@ -83,18 +83,51 @@ def _convert_stale(named):
         pass
 
 
+def _sh():
+    """The `sh` to run the scripts with: the one shell a box running hermes is promised, except on
+    Windows, which has none of its own. There it is the first `sh.exe` in a directory PATH names,
+    else Git for Windows' — beside the `git.exe` in one, or where its installer puts it — and None
+    when there is none. Only directories named in full are searched: the current one, which Windows
+    searches first, is the project hermes runs in, and a `sh.bat` there is no shell to run."""
+    if os.name != "nt":
+        return "sh"
+    dirs = [os.path.normpath(d) for d in os.environ.get("PATH", "").split(os.pathsep) if os.path.isabs(d)]
+    candidates = [os.path.join(d, "sh.exe") for d in dirs]
+    candidates += [
+        os.path.join(os.path.dirname(d), "bin", "sh.exe") for d in dirs if os.path.isfile(os.path.join(d, "git.exe"))
+    ]
+    for base in ("ProgramFiles", "ProgramW6432", "LOCALAPPDATA"):
+        root = os.environ.get(base)
+        if root and os.path.isabs(root):
+            candidates += [os.path.join(root, "Git", "bin", "sh.exe"), os.path.join(root, "Programs", "Git", "bin", "sh.exe")]
+    return next((c for c in candidates if os.path.isfile(c)), None)
+
+
 def _spawn(script, *args):
-    """Run `script` detached and forget it — through `sh`, the one shell a box running hermes is
-    promised."""
+    """Run `script` detached and forget it, through `sh`. On Windows the script is named with `/`,
+    which a shell does not take for an escape, and the worker gets no console window to show. A
+    hook must never raise into hermes, so a shell that cannot be started, or none to start, costs
+    the run and nothing else."""
+    sh = _sh()
+    if not sh:
+        return
     env = dict(os.environ, HF_HUB_USER_AGENT_ORIGIN=_hub_origin())
-    subprocess.Popen(
-        ["sh", os.path.join(HERE, script), *args],
-        env=env,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
+    path = os.path.join(HERE, script)
+    detach = {"start_new_session": True}
+    if os.name == "nt":
+        path = path.replace("\\", "/")
+        detach = {"creationflags": subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP}
+    try:
+        subprocess.Popen(
+            [sh, path, *args],
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            **detach,
+        )
+    except OSError:
+        pass
 
 
 def _on_turn(**kwargs):

@@ -9,9 +9,11 @@ on:
 permissions: {}
 
 jobs:
+  # A run proves only the OS it ran on: each bundle on Linux and on Windows, where funes runs every
+  # `setup` and its agent every hook under Git for Windows' shell.
   bundles:
-    name: Bundle tests
-    runs-on: ubuntu-latest
+    name: Bundle tests (${{ matrix.id }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -19,8 +21,26 @@ jobs:
       fail-fast: false
       matrix:
         id: [claude, codex, hermes, pi]
+        os: [ubuntu-latest, windows-latest]
+    # Git for Windows' bash on Windows, the shell the bundles run under there.
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # What a Windows box running these agents has and the runner may not: jq, which the claude and
+      # codex converters are, and a `python3` that is Python. The runner's own may be the Store's
+      # stand-in, so the name runs the runner's Python by its path, which a test's PATH may not hold.
+      - name: Provide jq and python3
+        if: runner.os == 'Windows'
+        run: |
+          command -v jq >/dev/null 2>&1 || choco install jq -y --no-progress
+          shims="$RUNNER_TEMP/shims"
+          mkdir -p "$shims"
+          printf '#!/bin/sh\nexec "%s" "$@"\n' "$(command -v python)" >"$shims/python3"
+          chmod +x "$shims/python3"
+          cygpath -w "$shims" >>"$GITHUB_PATH"
 
       # Each bundle's own suite: its converter, its setup and its hooks, driven against fakes.
       - name: Test the bundle

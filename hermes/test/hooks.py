@@ -26,7 +26,8 @@ tmp = tempfile.mkdtemp(prefix="funes-hermes-hooks-")
 # through it.
 shims = os.path.join(tmp, "shims")
 os.makedirs(shims)
-with open(os.path.join(shims, "bash"), "w", encoding="utf-8") as f:
+# Scripts are written with `\n`, which `sh` reads: Windows would end each line with CRLF.
+with open(os.path.join(shims, "bash"), "w", encoding="utf-8", newline="\n") as f:
     f.write("#!/bin/sh\nexit 127\n")
 os.chmod(os.path.join(shims, "bash"), 0o755)
 os.environ["PATH"] = shims + os.pathsep + os.environ.get("PATH", "")
@@ -44,7 +45,7 @@ for name, value in (("spool", spool), ("state-db", db), ("memory", "acme/kb")):
         f.write(value + "\n")
 log = os.path.join(tmp, "worker.log")
 script = os.path.join(dest, "funes-index.sh")
-with open(script, "w", encoding="utf-8") as f:
+with open(script, "w", encoding="utf-8", newline="\n") as f:
     f.write(f"#!/bin/sh\nprintf '%s: %s\\n' \"${{HF_HUB_USER_AGENT_ORIGIN:-}}\" \"$*\" >>\"{log}\"\n")
 os.chmod(script, 0o755)
 
@@ -83,6 +84,7 @@ if not os.path.isfile(os.path.join(spool, "20260101_000000_fixture.funes.jsonl")
 for fn in hooks["on_session_finalize"]:
     fn()
 
+# Two detached launches, which nothing orders: both are recorded, in whichever order they ran.
 deadline = time.time() + 10
 origin = "funes; agent/hermes; agent_version/9.9.9"
 expected = f"{origin}: \n{origin}: --publish\n"
@@ -92,10 +94,50 @@ while True:
             got = f.read()
     except OSError:
         got = ""
-    if got == expected:
+    if got.endswith("\n") and sorted(got.splitlines()) == sorted(expected.splitlines()):
         break
     if time.time() > deadline:
         fail(f"the index script was launched with {got!r}, expected {expected!r}")
     time.sleep(0.05)
+
+# On Windows the shell comes from a directory PATH names in full, or from Git's install, never from
+# the project hermes runs in, which Windows searches first: not a shell planted there, nor one in a
+# directory PATH names relative to it. With no shell anywhere, there is none to start.
+if os.name == "nt":
+    project = os.path.join(tmp, "project")
+    os.makedirs(os.path.join(project, "bin"))
+    for planted in ("sh.bat", "sh.cmd", "sh.exe", os.path.join("bin", "sh.exe")):
+        with open(os.path.join(project, planted), "w", encoding="utf-8") as f:
+            f.write("@echo off\n")
+    saved_env, saved_cwd = dict(os.environ), os.getcwd()
+    os.chdir(project)
+    try:
+        # As Windows has it by default: a lookup by bare name searches the current directory first.
+        os.environ.pop("NoDefaultCurrentDirectoryInExePath", None)
+        for path in (saved_env["PATH"], "bin" + os.pathsep + saved_env["PATH"]):
+            os.environ["PATH"] = path
+            sh = plugin._sh()
+            if not sh or os.path.abspath(sh).lower().startswith(project.lower()):
+                fail(f"the shell was taken from the project: {sh!r}")
+        empty = os.path.join(tmp, "empty")
+        os.makedirs(empty)
+        for name in ("PATH", "ProgramFiles", "ProgramW6432", "LOCALAPPDATA"):
+            os.environ[name] = empty
+        if plugin._sh() is not None:
+            fail(f"with no shell anywhere, took {plugin._sh()!r}")
+    finally:
+        os.chdir(saved_cwd)
+        os.environ.clear()
+        os.environ.update(saved_env)
+
+# A shell that cannot be started costs the run, never an exception in hermes, at a turn or at
+# either boundary.
+plugin._sh = lambda: os.path.join(tmp, "no-such-shell", "sh")
+try:
+    for event in ("post_llm_call", "on_session_start", "on_session_finalize"):
+        for fn in hooks[event]:
+            fn(session_id="20260101_000000_fixture")
+except OSError as e:
+    fail(f"a hook raised into hermes: {e!r}")
 shutil.rmtree(tmp)
 print("hermes hooks: ok")

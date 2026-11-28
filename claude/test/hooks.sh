@@ -23,7 +23,15 @@ printf '%s: %s\n' "${HF_HUB_USER_AGENT_ORIGIN:-}" "$*" >>"$FUNES_TEST_CLI_LOG"
 [ "$1" != index ] || [ ! -e "$FUNES_TEST_CLI_LOG.busy" ] || exit 75
 FAKE
 chmod +x "$tmp/bin/funes"
-export PATH="$tmp/bin:/usr/bin:/bin"
+# The jq of the caller's PATH stays on this one, wherever the box keeps it: Windows does not keep it
+# in /usr/bin. A native Windows jq is read as the bundle reads it, told `--binary`.
+jq=$(command -v jq) || fail "jq is not on PATH"
+export PATH="$tmp/bin:/usr/bin:/bin:${jq%/*}"
+case $(jq -n 1 2>/dev/null | od -An -c) in *'\r'*) jq() { command jq --binary "$@"; } ;; esac
+# The PATH a hook gets on Windows when its shell is started from a native program: in Windows' own
+# order, System32, whose `find` is a text search, ahead of Git's tools. Elsewhere the PATH as it is.
+native=$PATH
+[ ! -x /usr/bin/cygpath ] || native="$(cygpath -u -S):$PATH"
 export FUNES_TEST_CLI_LOG="$tmp/cli.log"
 # funes and the agent are named after an origin the user set.
 export HF_HUB_USER_AGENT_ORIGIN=mine
@@ -76,7 +84,7 @@ transcript() { cat "$fixture" >"$tree/$1"; }
 # boundary. The payload names `a.jsonl` unless told another. The worker takes the file with it.
 fire() {
     printf '{"transcript_path":"%s"}' "$tree/${2:-a.jsonl}" >"$tmp/payload"
-    sh "$scripts/funes-index.sh" --worker "$tmp/payload" "${1:-}"
+    PATH=$native sh "$scripts/funes-index.sh" --worker "$tmp/payload" "${1:-}"
     [ ! -e "$tmp/payload" ] || fail "the worker left the payload's file"
 }
 # Filesystems stamp to the second at worst, and `find -newer` compares stamps.
@@ -84,7 +92,7 @@ tick() { sleep 2; }
 # A worker in the background, its payload naming the transcript `$1`.
 fire_in_background() {
     printf '{"transcript_path":"%s"}' "$tree/$1" >"$tmp/payload-$1"
-    sh "$scripts/funes-index.sh" --worker "$tmp/payload-$1" &
+    PATH=$native sh "$scripts/funes-index.sh" --worker "$tmp/payload-$1" &
 }
 # Wait for a file a background worker creates, as long as a conversion could take.
 await() {
@@ -234,6 +242,29 @@ rm "$ctl/x.fail"
 tick
 fire
 [ -f "$spool/x.funes.jsonl" ] || fail "a session whose conversion failed was never converted again"
+
+# Claude Code on Windows names the transcript as Windows does, `C:\Users\…`, or led by `\\` when it
+# lives on a share, `\\server\share\…`, or is spelled verbatim, `\\?\C:\Users\…`: it is converted
+# under its own stem, once, though the sweep lists it as the shell spells it, and the run moves the
+# mark. A name the hook could not split would fail its conversion and hold the mark back, so every
+# turn after swept everything since. Only Windows has the spellings to test; the verbatim one stands
+# for a share, which a runner may not serve.
+if command -v cygpath >/dev/null 2>&1; then
+    for lead in '' '\\?\'; do
+        tick
+        transcript w.jsonl
+        rm -f "$spool/w.funes.jsonl"
+        : >"$scripts/funes-sync.log"
+        touch -t 202001010000 "$scripts/converted"
+        printf '{"transcript_path":"%s"}' "$(printf '%s%s' "$lead" "$(cygpath -w "$tree/w.jsonl")" | sed 's/\\/\\\\/g')" >"$tmp/payload"
+        sh "$scripts/funes-index.sh" --worker "$tmp/payload"
+        log=$(cat "$scripts/funes-sync.log")
+        [ -f "$spool/w.funes.jsonl" ] || fail "a transcript Windows named ${lead}C:\\… was not converted: $log"
+        if grep -q 'convert: FAILED' "$scripts/funes-sync.log"; then fail "a conversion failed: $log"; fi
+        [ "$(grep -c 'convert: w$' "$scripts/funes-sync.log")" = 1 ] || fail "a transcript Windows named ${lead}C:\\… was converted more than once: $log"
+        [ "$scripts/converted" -nt "$tree/w.jsonl" ] || fail "a run on a transcript Windows named ${lead}C:\\… left the mark where it was"
+    done
+fi
 
 # The foreground half, as the hook runs it: the payload on stdin — carrying an assistant message
 # larger than any argument could — handed to a detached worker, and the hook returns at once.

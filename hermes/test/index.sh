@@ -21,6 +21,9 @@ printf '%s\n' "$*" >>"$FUNES_TEST_CLI_LOG"
 FAKE
 chmod +x "$tmp/bin/funes"
 export PATH="$tmp/bin:/usr/bin:/bin"
+# On Windows, the PATH hermes's Python starts Git's shell with: in Windows' own order, System32,
+# whose `find` is a text search, ahead of Git's tools.
+[ ! -x /usr/bin/cygpath ] || PATH="$(cygpath -u -S):$PATH"
 export FUNES_TEST_CLI_LOG="$tmp/cli.log"
 cp "$HERE/../plugin/funes-index.sh" "$tmp/plugin/"
 script="$tmp/plugin/funes-index.sh"

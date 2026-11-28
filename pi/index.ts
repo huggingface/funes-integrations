@@ -30,7 +30,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join, sep } from "node:path";
+import { delimiter, dirname, isAbsolute, join, resolve, sep } from "node:path";
 
 import { convertLive, convertTree } from "./convert.mjs";
 
@@ -215,12 +215,34 @@ const funes = new FunesMcp();
 // the spool `funes add pi` recorded; a run from a checkout has none, and spawns nothing.
 const INDEX_SH = join(HERE, "scripts", "funes-index.sh");
 
-// Run the automation detached and forget it: no failure of its is worth disturbing the session with.
+// The `sh` to run the automation with: the one shell a box running pi is promised, except on
+// Windows, where pi's own shell is Git for Windows', which need not be on PATH. There it is the first
+// `sh.exe` in a directory PATH names, else Git's — beside the `git.exe` in one, or where its
+// installer puts it — and none when there is none. Only directories named in full are searched: the
+// current one, which Windows searches first, is the project pi runs in, and an `sh.exe` there is no
+// shell to run.
+function sh(): string | undefined {
+  if (process.platform !== "win32") return "sh";
+  const dirs = (process.env.PATH ?? "").split(delimiter).filter((dir) => isAbsolute(dir));
+  const onPath = dirs.map((dir) => join(dir, "sh.exe"));
+  const besideGit = dirs.filter((dir) => existsSync(join(dir, "git.exe"))).map((dir) => join(dir, "..", "bin", "sh.exe"));
+  const installed = ["ProgramFiles", "ProgramW6432", "LOCALAPPDATA"]
+    .map((base) => process.env[base])
+    .filter((base): base is string => Boolean(base) && isAbsolute(base))
+    .flatMap((base) => [join(base, "Git", "bin", "sh.exe"), join(base, "Programs", "Git", "bin", "sh.exe")]);
+  return [...onPath, ...besideGit, ...installed].find((candidate) => existsSync(candidate));
+}
+
+// Run the automation detached and forget it: no failure of its is worth disturbing the session with,
+// nor the want of a shell to run it. On Windows the script is named with `/`, which a shell does not
+// take for an escape, and the worker, detached, would get a console window of its own to show.
 function runScript(script: string, ...args: string[]) {
   if (!SPOOL || !existsSync(script)) return;
+  const shell = sh();
+  if (!shell) return;
   try {
-    // Through `sh`, the one shell a box running pi is promised.
-    const child = spawn("sh", [script, ...args], { env: funesEnv(), detached: true, stdio: "ignore" });
+    const path = process.platform === "win32" ? script.replaceAll("\\", "/") : script;
+    const child = spawn(shell, [path, ...args], { env: funesEnv(), detached: true, stdio: "ignore", windowsHide: true });
     child.on("error", () => {});
     child.unref();
   } catch {}
@@ -262,8 +284,12 @@ function convertStale(file: string) {
 // session in progress is under it; else the session's own directory — pi writes straight into a
 // `--session-dir`, with no directory per project, and a walk any higher would take in files that
 // are not sessions at all.
+// Both paths are resolved before they are compared: on Windows, pi names the session `C:\…`, and
+// `setup` recorded the root `C:/…`. There a path's case is not its own either, so it is not compared:
+// `c:\users\…` is under `C:/Users/…`.
 function sweepRoot(file: string): string {
-  return SESSIONS && file.startsWith(SESSIONS + sep) ? SESSIONS : dirname(file);
+  const key = (path: string) => (process.platform === "win32" ? resolve(path).toLowerCase() : resolve(path));
+  return SESSIONS && key(file).startsWith(key(SESSIONS) + sep) ? SESSIONS : dirname(file);
 }
 
 // Convert the history `setup` left behind, once, and say whether it did. Failure keeps the marker,

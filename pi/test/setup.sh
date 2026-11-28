@@ -38,13 +38,17 @@ chmod +x "$tmp/bin/node"
 cp -R "$BUNDLE" "$HOME/.funes/agents/pi"
 dir="$HOME/.funes/agents/pi"
 setup="$dir/setup"
+# A path as the extension, in pi's own Node, reads it: on Windows `C:/…`, not the shell's spelling.
+native() {
+    if command -v cygpath >/dev/null 2>&1; then cygpath -m -- "$1"; else printf '%s\n' "$1"; fi
+}
 
 "$setup" add acme/kb >"$tmp/add.out"
 grep -q "installed funes into pi" "$tmp/add.out" || fail "add did not report: $(cat "$tmp/add.out")"
 [ -f "$dir/index.ts" ] || fail "the extension itself is missing"
 [ "$(cat "$dir/memory")" = acme/kb ] || fail "no memory file for index.ts"
-[ "$(cat "$dir/spool")" = "$FUNES_HOME/spool/pi" ] || fail "the spool is not recorded"
-[ "$(cat "$dir/sessions")" = "$sessions" ] || fail "the sessions root is not recorded"
+[ "$(cat "$dir/spool")" = "$(native "$FUNES_HOME/spool/pi")" ] || fail "the spool is not recorded: $(cat "$dir/spool")"
+[ "$(cat "$dir/sessions")" = "$(native "$sessions")" ] || fail "the sessions root is not recorded: $(cat "$dir/sessions")"
 [ -f "$FUNES_HOME/spool/pi/session.funes.jsonl" ] || fail "the history was not seeded"
 [ -x "$setup" ] && [ -x "$dir/scripts/funes-index.sh" ] || fail "the scripts are not executable"
 # The version gate, then the registration.
@@ -59,7 +63,7 @@ rm "$tmp/bin/node" "$FUNES_HOME/spool/pi/session.funes.jsonl"
 "$setup" add >/dev/null 2>"$tmp/add.err"
 [ ! -e "$dir/memory" ] || fail "the memory file was left stale"
 grep -q "no JS runtime" "$tmp/add.err" || fail "the seed did not say it was left pending: $(cat "$tmp/add.err")"
-[ "$(cat "$dir/seed-pending")" = "$sessions" ] || fail "the history was not left for the extension"
+[ "$(cat "$dir/seed-pending")" = "$(native "$sessions")" ] || fail "the history was not left for the extension"
 
 : >"$dir/scripts/pushed"
 : >"$FUNES_TEST_CLI_LOG"

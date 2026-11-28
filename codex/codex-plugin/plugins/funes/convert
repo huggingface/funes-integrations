@@ -17,6 +17,18 @@ out=${2:-}
 
 command -v jq >/dev/null 2>&1 || { echo "convert: jq is required (see the bundle setup)" >&2; exit 1; }
 
+# A native Windows jq ends every line it writes with CRLF unless told `--binary`. No other jq writes
+# one, and a jq before 1.7 may not take the flag, so only a jq seen writing CRLF is told. A caller
+# that asked the same jq already, `setup` or the hook, hands its answer down in FUNES_JQ_FLAGS: a
+# seed then asks once rather than per rollout, on the system where a process is slowest to start.
+case ${FUNES_JQ_FLAGS-unset} in
+"" | --binary) JQ_FLAGS=$FUNES_JQ_FLAGS ;;
+*)
+    JQ_FLAGS=
+    case $(jq -n 1 2>/dev/null | od -An -c) in *'\r'*) JQ_FLAGS=--binary ;; esac
+    ;;
+esac
+
 # The session id when no session_meta line carries one: the file stem, as funes names a
 # session after its transcript.
 base=${src##*/}
@@ -26,7 +38,7 @@ stem=${base%.*}
 # chunks and replaces every byte of a multi-byte character that straddles a chunk boundary
 # with U+FFFD, which silently corrupts 9 % of real rollouts.
 run() {
-    jq -n -c --arg stem "$stem" --rawfile doc "$src" '
+    jq $JQ_FLAGS -n -c --arg stem "$stem" --rawfile doc "$src" '
 # --- helpers ---------------------------------------------------------------
 # A string with at least one character outside Unicode White_Space, i.e. what
 # Rust str::trim leaves behind.

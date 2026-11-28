@@ -14,6 +14,11 @@
 # exits non-zero, is logged, and the next turn re-sweeps the same content — indexing is idempotent.
 set -u
 
+# Git for Windows' shell, started from a native program, keeps Windows' PATH order, which puts
+# System32, whose `find` is a text search, ahead of Git's own tools: those go first. Only such a
+# shell has /usr/bin/cygpath.
+[ ! -x /usr/bin/cygpath ] || PATH="/usr/bin:$PATH"
+
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 LOG="$HERE/funes-sync.log"
 HARNESS=pi

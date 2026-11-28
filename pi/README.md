@@ -53,6 +53,8 @@ pi's own sessions are untouched.
 - pi >= 0.84.0, which is where pi validates the nullable-union arguments the funes tool schemas
   declare. `funes add pi` refuses to register the extension on an older pi rather than leave you
   with tools that reject their own calls.
+- On Windows, [Git for Windows](https://gitforwindows.org): funes runs `setup` with its shell, and
+  the extension its index script, from `PATH` or from where Git's installer puts it.
 - A funes memory the binary can read — local, or a live `hf://` remote (needs network + an HF
   token for a private remote). Which one is funes's to bind:
   [docs/add.md](https://github.com/huggingface/funes/blob/main/docs/add.md#binding-a-memory).

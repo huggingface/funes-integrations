@@ -30,7 +30,14 @@ esac
 [ "$*" != "mcp add --help" ] || [ -n "${FAKE_HERMES_NO_MCP_ENV:-}" ] || echo "  --env [ENV ...]       Environment variables for stdio servers (KEY=VALUE)"
 FAKE
 chmod +x "$tmp/bin/hermes"
-export PATH="$tmp/bin:/usr/bin:/bin"
+# The Python of the caller's PATH stays on this one, wherever the box keeps it: Windows does not keep
+# it in /usr/bin, and may call it `python`.
+for py in python3 python; do
+    py=$(command -v "$py") && "$py" -c 'import sqlite3' >/dev/null 2>&1 && break
+    py=
+done
+[ -n "$py" ] || fail "no python on PATH"
+export PATH="$tmp/bin:/usr/bin:/bin:${py%/*}"
 export FUNES_TEST_CLI_LOG="$tmp/cli.log"
 export FUNES_BIN=funes FUNES_HOME="$HOME/.funes" FUNES_AGENT_ID=hermes
 # hermes answers for its own home; the fake says nothing, so the default lands in the fake one.
@@ -79,7 +86,10 @@ grep -q "def register(ctx)" "$plugin/__init__.py" || fail "no plugin entry point
 [ -x "$plugin/funes-index.sh" ] || fail "the hook script is not executable"
 # The memory rides in a file the plugin reads, so the plugin stays a static file.
 [ "$(cat "$plugin/memory")" = acme/kb ] || fail "no memory file"
-[ "$(cat "$plugin/spool")" = "$FUNES_HOME/spool/hermes" ] || fail "the spool is not recorded"
+# Recorded as hermes's own Python reads it: on Windows, `C:/…` rather than the shell's spelling.
+recorded="$FUNES_HOME/spool/hermes"
+if command -v cygpath >/dev/null 2>&1; then recorded=$(cygpath -m -- "$recorded"); fi
+[ "$(cat "$plugin/spool")" = "$recorded" ] || fail "the spool is not recorded: $(cat "$plugin/spool")"
 [ -f "$FUNES_HOME/spool/hermes/20260101_000000_fixture.funes.jsonl" ] || fail "the history was not seeded"
 # The pre-plugin hooks come out of the user's own file, their approvals revoked by their whole
 # command and their scripts gone; the user's hook and the rest of the file stay as they were.

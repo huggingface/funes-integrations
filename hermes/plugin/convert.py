@@ -22,6 +22,7 @@ import os
 import re
 import sqlite3
 import sys
+from contextlib import closing
 from datetime import datetime, timezone
 
 HARNESS = "hermes"
@@ -117,7 +118,9 @@ def timestamp(secs):
 
 
 def _open(db):
-    return sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    """The store, read-only, closed when the `with` ends: a connection's own `with` ends its
+    transaction and leaves it open, and on Windows a file held open cannot be deleted."""
+    return closing(sqlite3.connect(f"file:{db}?mode=ro", uri=True))
 
 
 def _has_cwd(conn):
@@ -204,7 +207,8 @@ def convert(db, spool, session_id):
     # Atomic, and the temporary name is not a `.jsonl` one, so a concurrent `funes index` over the
     # spool neither lists it nor refuses the directory for holding it.
     tmp = f"{out}.tmp{os.getpid()}"
-    with open(tmp, "w", encoding="utf-8") as f:
+    # One `\n` per turn on every platform: Windows would otherwise write each as CRLF.
+    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
         f.write(body)
     # Stamped with the session's own time, so funes drains the spool newest session first rather
     # than in the order the seed happened to convert them.

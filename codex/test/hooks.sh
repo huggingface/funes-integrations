@@ -23,7 +23,16 @@ printf '%s: %s\n' "${HF_HUB_USER_AGENT_ORIGIN:-}" "$*" >>"$FUNES_TEST_CLI_LOG"
 [ "$1" != index ] || [ ! -e "$FUNES_TEST_CLI_LOG.busy" ] || exit 75
 FAKE
 chmod +x "$tmp/bin/funes"
-export PATH="$tmp/bin:/usr/bin:/bin"
+# The jq of the caller's PATH stays on this one, wherever the box keeps it: Windows does not keep it
+# in /usr/bin. A native Windows jq is read as the bundle reads it, told `--binary`.
+jq=$(command -v jq) || fail "jq is not on PATH"
+export PATH="$tmp/bin:/usr/bin:/bin:${jq%/*}"
+case $(jq -n 1 2>/dev/null | od -An -c) in *'\r'*) jq() { command jq --binary "$@"; } ;; esac
+# The PATH a hook gets on Windows, where Codex starts Git's shell from a native program: in
+# Windows' own order, System32, whose `find` is a text search, ahead of Git's tools. Elsewhere the
+# PATH as it is.
+native=$PATH
+[ ! -x /usr/bin/cygpath ] || native="$(cygpath -u -S):$PATH"
 export FUNES_TEST_CLI_LOG="$tmp/cli.log"
 # The origin comes from the scripts, not from whoever ran the test.
 unset HF_HUB_USER_AGENT_ORIGIN
@@ -82,7 +91,7 @@ rollout() { cat "$fixture" >"$tree/$1"; }
 # it.
 fire() {
     printf '{"transcript_path":"%s","session_id":"s"}' "$tree/${2:-rollout-a.jsonl}" >"$tmp/payload"
-    sh "$scripts/funes-index.sh" --worker "$tmp/payload" "${1:-}"
+    PATH=$native sh "$scripts/funes-index.sh" --worker "$tmp/payload" "${1:-}"
     [ ! -e "$tmp/payload" ] || fail "the worker left the payload's file"
 }
 # Filesystems stamp to the second at worst, and `find -newer` compares stamps.
@@ -90,7 +99,7 @@ tick() { sleep 2; }
 # A worker in the background, its payload naming the rollout `$1`.
 fire_in_background() {
     printf '{"transcript_path":"%s","session_id":"s"}' "$tree/$1" >"$tmp/payload-$1"
-    sh "$scripts/funes-index.sh" --worker "$tmp/payload-$1" &
+    PATH=$native sh "$scripts/funes-index.sh" --worker "$tmp/payload-$1" &
 }
 # Wait for a file a background worker creates, as long as a conversion could take.
 await() {
@@ -230,6 +239,30 @@ tick
 fire
 [ -f "$spool/rollout-x.funes.jsonl" ] ||
     fail "a rollout whose conversion failed was never converted again"
+
+# Codex on Windows names the rollout and the plugin's data as Windows does, `C:\Users\…`, or led by
+# `\\` when they live on a share, `\\server\share\…`, or are spelled verbatim, `\\?\C:\Users\…`, as
+# Rust's canonical paths are: the rollout is converted under its own stem, once, though the sweep
+# lists it as the shell spells it, and the run moves the mark. A name the hook could not split would
+# fail its conversion and hold the mark back, so every turn after swept everything since. Only
+# Windows has the spellings to test; the verbatim one stands for a share, which a runner may not
+# serve.
+if command -v cygpath >/dev/null 2>&1; then
+    for lead in '' '\\?\'; do
+        tick
+        rollout rollout-w.jsonl
+        rm -f "$spool/rollout-w.funes.jsonl"
+        : >"$data/funes-sync.log"
+        touch -t 202001010000 "$data/converted"
+        printf '{"transcript_path":"%s","session_id":"w"}' "$(printf '%s%s' "$lead" "$(cygpath -w "$tree/rollout-w.jsonl")" | sed 's/\\/\\\\/g')" >"$tmp/payload"
+        PLUGIN_DATA="$lead$(cygpath -w "$data")" sh "$scripts/funes-index.sh" --worker "$tmp/payload"
+        log=$(cat "$data/funes-sync.log")
+        [ -f "$spool/rollout-w.funes.jsonl" ] || fail "a rollout Windows named ${lead}C:\\… was not converted: $log"
+        if grep -q 'convert: FAILED' "$data/funes-sync.log"; then fail "a conversion failed: $log"; fi
+        [ "$(grep -c 'convert: rollout-w$' "$data/funes-sync.log")" = 1 ] || fail "a rollout Windows named ${lead}C:\\… was converted more than once: $log"
+        [ "$data/converted" -nt "$tree/rollout-w.jsonl" ] || fail "a run on a rollout Windows named ${lead}C:\\… left the mark where it was"
+    done
+fi
 
 # A run Codex hands no directory keeps its state where Codex has the plugin's data, which is where
 # the walk `setup add` makes leaves the mark the sweeps share.

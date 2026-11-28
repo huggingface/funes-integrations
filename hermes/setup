@@ -39,11 +39,36 @@ seed() {
     spool=$2
     db="$3/state.db"
     [ -f "$db" ] || return 0
-    if command -v python3 >/dev/null 2>&1; then
-        python3 "$dest/convert.py" "$db" "$spool" >/dev/null
+    if py=$(find_python); then
+        "$py" "$dest/convert.py" "$db" "$spool" >/dev/null
     else
-        echo "no python3 on PATH to convert your existing hermes sessions — hermes runs on it, so" \
-            "this is unexpected; they will be converted as each session ends." >&2
+        echo "no Python with sqlite3 on PATH, as python3 or python, to convert your existing hermes" \
+            "sessions — hermes runs on one, so this is unexpected; they will be converted as each" \
+            "session ends." >&2
+    fi
+}
+
+# The Python to convert with: `python3`, or `python` where that is the name, as on Windows, whose
+# `python3` may be the Store's stand-in that installs nothing and fails. Taken only once it runs.
+find_python() {
+    for py in python3 python; do
+        if command -v "$py" >/dev/null 2>&1 && "$py" -c 'import sqlite3' >/dev/null 2>&1; then
+            printf '%s\n' "$py"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# A path as both this shell and a native Windows program read it. hermes on Windows names its home
+# as Windows does, `C:\Users\…`, which `dirname` cannot split, and the plugin, run by hermes's own
+# Python, cannot read the shell's `/c/Users/…`; Git's `cygpath -m` spells it `C:/Users/…`, which both
+# read. Elsewhere a path is left as it is.
+native_path() {
+    if command -v cygpath >/dev/null 2>&1; then
+        cygpath -m -- "$1"
+    else
+        printf '%s\n' "$1"
     fi
 }
 
@@ -52,9 +77,9 @@ seed() {
 # default, is the fallback when hermes can't be run.
 hermes_home() {
     if have_hermes && path=$(hermes config path 2>/dev/null | tail -n 1) && [ -n "$path" ]; then
-        dirname "$path"
+        dirname "$(native_path "$path")"
     else
-        printf '%s\n' "${HERMES_HOME:-$HOME/.hermes}"
+        native_path "${HERMES_HOME:-$HOME/.hermes}"
     fi
 }
 
@@ -168,7 +193,8 @@ add() {
 
     spool=$(spool_dir)
     mkdir -p "$spool"
-    printf '%s\n' "$spool" >"$dest/spool"
+    # Read by hermes's own Python, so spelled as a native program reads it.
+    printf '%s\n' "$(native_path "$spool")" >"$dest/spool"
     # The plugin reads the store hermes keeps beside its configuration.
     printf '%s\n' "$home/state.db" >"$dest/state-db"
     seed "$dest" "$spool" "$home"

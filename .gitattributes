@@ -1,0 +1,4 @@
+# Text is checked out with LF endings on every platform, Windows included, whatever a clone's
+# core.autocrlf says: the bundles are shell scripts, which take a carriage return for part of a
+# command, and their fixtures are compared byte for byte.
+* text=auto eol=lf

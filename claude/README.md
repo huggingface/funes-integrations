@@ -53,10 +53,14 @@ Your memory and Claude Code's own transcripts are untouched.
 
 - `funes` on `PATH` (set `FUNES_BIN` to override the binary path).
 - `claude` on `PATH`; without it the files are installed and the commands to register them printed.
-- A stock `jq`, 1.6 or newer: the converter is jq, and there is nothing to capture without it.
-  macOS 15 and newer ship one; elsewhere `apt install jq`, `dnf install jq`, `apk add jq`.
+- A stock `jq`, 1.6 or newer, and 1.7 or newer on Windows, where an older one writes every line
+  with CRLF and has no `--binary` to stop it: the converter is jq, and there is nothing to capture
+  without it. macOS 15 and newer ship one; elsewhere `apt install jq`, `dnf install jq`,
+  `apk add jq`, and on Windows `winget install jqlang.jq`.
   `funes add claude` checks that the jq on PATH converts a transcript the way funes reads it before
   it installs anything.
+- On Windows, [Git for Windows](https://gitforwindows.org), whose shell Claude Code needs there too:
+  funes runs `setup` with it, and Claude Code its hooks.
 - A funes memory the binary can read — local, or a live `hf://` remote (needs network + an HF
   token for a private remote). Which one is funes's to bind:
   [docs/add.md](https://github.com/huggingface/funes/blob/main/docs/add.md#binding-a-memory).
